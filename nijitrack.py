@@ -12,6 +12,21 @@ from mediapipe.tasks.python import vision
 from pythonosc.udp_client import SimpleUDPClient
 from scipy.spatial.transform import Rotation as R
 
+from pynput import keyboard
+from threading import Thread
+
+# グローバルキーボードリスナーの定義
+def on_key_press(key):
+    try:
+        print(f"[KeyPress] {key.char}")
+    except AttributeError:
+        print(f"[SpecialKey] {key}")
+
+def start_keyboard_listener():
+    listener = keyboard.Listener(on_press=on_key_press)
+    listener.daemon = True
+    listener.start()
+
 mp_face_mesh = mp.solutions.face_mesh
 FACE_CONNECTIONS = mp_face_mesh.FACEMESH_TESSELATION.union(
     mp_face_mesh.FACEMESH_CONTOURS
@@ -48,12 +63,10 @@ def list_video_devices(max_devices=10):
                     cap.release()
     elif current_os == "Windows":
         try:
-            # Attempt to use wmi for a cross-platform solution on Windows
             import wmi
             c = wmi.WMI()
             for cam in c.Win32_PnPEntity():
                 if cam.Description and ("camera" in cam.Description.lower() or "video" in cam.Description.lower()):
-                    # Use the description provided by the system as the device name.
                     devices.append({"id": len(devices), "name": cam.Description})
         except Exception:
             for i in range(max_devices):
@@ -65,8 +78,6 @@ def list_video_devices(max_devices=10):
         try:
             result = subprocess.run(["system_profiler", "SPCameraDataType"], capture_output=True, text=True)
             output = result.stdout
-            # Parsing the output reliably across MacOS versions is non-trivial.
-            # As a generic fallback, list available devices with index-based names.
             for i in range(max_devices):
                 cap = cv2.VideoCapture(i)
                 if cap.isOpened():
@@ -175,6 +186,8 @@ def render_frame(frame, width, height, landmarks, blendshapes, yaw, pitch, roll,
     return display
 
 if __name__ == "__main__":
+    start_keyboard_listener()  # ✅ グローバルキーボード入力を監視
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--list-devices", action="store_true")
     parser.add_argument("--device", type=int)
@@ -250,7 +263,6 @@ if __name__ == "__main__":
             right_gaze = get_gaze_right(landmarks)
             left_gaze = get_gaze_left(landmarks)
 
-            # ✅ VMC仕様：Position + Quaternion をまとめて送信
             osc_client.send_message("/VMC/Ext/Bone/Pos", [
                 "Head",
                 nose[0], nose[1], nose[2],
