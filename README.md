@@ -15,7 +15,7 @@ nijitrack is a real-time face tracking system built on top of MediaPipe. It leve
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/yourusername/nijitrack.git
+   git clone https://github.com/nijigenerate/nijitrack.git
    cd nijitrack
    ```
 
@@ -81,4 +81,4 @@ Contributions are welcome! If you encounter bugs, or have suggestions, please op
 
 ## Contact
 
-For questions or feedback, please contact the author or open an issue in the repository.
+For questions or feedback, please contact the author or open an issue at https://github.com/nijigenerate/nijitrack/issues 
