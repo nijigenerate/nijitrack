@@ -119,7 +119,7 @@ if __name__ == "__main__":
     parser.add_argument("--list-devices", action="store_true")
     parser.add_argument("--device", type=int)
     parser.add_argument("--osc-host", type=str, default="127.0.0.1")
-    parser.add_argument("--osc-port", type=int, default=9000)
+    parser.add_argument("--osc-port", type=int, default=39540)
     parser.add_argument("--flip", action="store_true")
     parser.add_argument("--show", action="store_true")
     parser.add_argument("--show-video", action="store_true")
