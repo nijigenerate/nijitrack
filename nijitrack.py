@@ -4,6 +4,7 @@ import cv2
 import time
 import math
 import sys
+import os
 import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python
@@ -137,7 +138,7 @@ if __name__ == "__main__":
 
     osc_client = SimpleUDPClient(args.osc_host, args.osc_port)
 
-    model_path = "face_landmarker_v2_with_blendshapes.task"
+    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "face_landmarker_v2_with_blendshapes.task")
     base_options = python.BaseOptions(model_asset_path=model_path)
     options = vision.FaceLandmarkerOptions(
         base_options=base_options,
