@@ -29,7 +29,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "nijitrack=track.py:main"
+            "nijitrack=nijitrack:main"
         ]
     },
     python_requires=">=3.8",
