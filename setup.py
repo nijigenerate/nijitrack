@@ -50,9 +50,9 @@ setup(
     version="0.1.0",
     description="Real-time face tracking using MediaPipe with nijitrack",
     long_description="This package implements real-time face tracking using MediaPipe.",
-    author="Your Name",
-    author_email="your.email@example.com",
-    url="https://github.com/yourusername/nijitrack",
+    author="seagetch",
+    author_email="seagetch@users.noreply.github.com",
+    url="https://github.com/nijigenerate/nijitrack",
     packages=find_packages(),
     install_requires=[
         "opencv-python",
