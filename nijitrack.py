@@ -18,12 +18,72 @@ FACE_CONNECTIONS = mp_face_mesh.FACEMESH_TESSELATION.union(
 ).union(mp_face_mesh.FACEMESH_IRISES)
 
 def list_video_devices(max_devices=10):
+    import platform, subprocess
     devices = []
-    for i in range(max_devices):
-        cap = cv2.VideoCapture(i)
-        if cap.isOpened():
-            devices.append({"id": i, "name": f"Device {i}"})
-            cap.release()
+    current_os = platform.system()
+    if current_os == "Linux":
+        try:
+            result = subprocess.run(["v4l2-ctl", "--list-devices"], capture_output=True, text=True)
+            output = result.stdout
+            current_name = None
+            for line in output.splitlines():
+                if line.strip() == "":
+                    continue
+                if not line.startswith("\t"):
+                    current_name = line.strip()
+                else:
+                    dev_path = line.strip()
+                    if dev_path.startswith("/dev/video"):
+                        try:
+                            id_int = int(dev_path.replace("/dev/video", ""))
+                            if id_int < max_devices and not any(d["id"] == id_int for d in devices):
+                                devices.append({"id": id_int, "name": current_name})
+                        except Exception:
+                            pass
+        except Exception:
+            for i in range(max_devices):
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    devices.append({"id": i, "name": f"Device {i}"})
+                    cap.release()
+    elif current_os == "Windows":
+        try:
+            # Attempt to use wmi for a cross-platform solution on Windows
+            import wmi
+            c = wmi.WMI()
+            for cam in c.Win32_PnPEntity():
+                if cam.Description and ("camera" in cam.Description.lower() or "video" in cam.Description.lower()):
+                    # Use the description provided by the system as the device name.
+                    devices.append({"id": len(devices), "name": cam.Description})
+        except Exception:
+            for i in range(max_devices):
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    devices.append({"id": i, "name": f"Device {i}"})
+                    cap.release()
+    elif current_os == "Darwin":
+        try:
+            result = subprocess.run(["system_profiler", "SPCameraDataType"], capture_output=True, text=True)
+            output = result.stdout
+            # Parsing the output reliably across MacOS versions is non-trivial.
+            # As a generic fallback, list available devices with index-based names.
+            for i in range(max_devices):
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    devices.append({"id": i, "name": f"Camera {i}"})
+                    cap.release()
+        except Exception:
+            for i in range(max_devices):
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    devices.append({"id": i, "name": f"Device {i}"})
+                    cap.release()
+    else:
+        for i in range(max_devices):
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                devices.append({"id": i, "name": f"Device {i}"})
+                cap.release()
     return devices
 
 def normalize(v):
