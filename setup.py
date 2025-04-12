@@ -2,21 +2,18 @@
 import os
 import platform
 from setuptools import setup, find_packages
-import requests
+import urllib.request
+import shutil
 
 def download_model(model_url, dest_path):
     """
-    Downloads the model file from model_url to dest_path if it doesn't exist.
-    This functionality is preserved to ensure the required model is available.
+    Downloads the model file from model_url to dest_path if it doesn't exist,
+    using only the standard library (urllib).
     """
     if not os.path.exists(dest_path):
         print(f"Downloading model from {model_url} to {dest_path}...")
-        response = requests.get(model_url, stream=True)
-        response.raise_for_status()
-        with open(dest_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+        with urllib.request.urlopen(model_url) as response, open(dest_path, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
         print("Model download complete.")
     else:
         print("Model file already exists.")
@@ -31,17 +28,14 @@ MODEL_DEST = os.path.join(here, "face_landmarker_v2_with_blendshapes.task")
 download_model(MODEL_URL, MODEL_DEST)
 
 # Set up OS-specific extra requirements.
-# Although nijitrack.py contains OS-specific implementations (e.g., using subprocess on Linux,
-# wmi on Windows, and system_profiler on Darwin), we conditionally include modules
-# which are not part of the standard library.
 extra_requires = {}
 current_os = platform.system()
 if current_os == "Windows":
     extra_requires["windows"] = ["wmi"]
 elif current_os == "Linux":
-    extra_requires["linux"] = []  # No additional Python modules required.
+    extra_requires["linux"] = []
 elif current_os == "Darwin":
-    extra_requires["darwin"] = []  # No additional Python modules required.
+    extra_requires["darwin"] = []
 else:
     extra_requires["other"] = []
 
@@ -60,13 +54,12 @@ setup(
         "numpy",
         "python-osc",
         "scipy",
-        "requests",
         "pynput"
+        # Removed "requests"
     ],
     extras_require=extra_requires,
     entry_points={
         "console_scripts": [
-            # Entry point for the nijitrack command.
             "nijitrack = nijitrack.nijitrack:main",
         ],
     },
@@ -77,4 +70,3 @@ setup(
     ],
     python_requires=">=3.6",
 )
-
