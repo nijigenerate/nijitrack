@@ -24,7 +24,7 @@ def download_model(model_url, dest_path):
 here = os.path.abspath(os.path.dirname(__file__))
 
 # Define the model URL and destination path.
-MODEL_URL = "http://example.com/face_landmarker_v2_with_blendshapes.task"
+MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
 MODEL_DEST = os.path.join(here, "face_landmarker_v2_with_blendshapes.task")
 
 # Ensure the model file is downloaded.
