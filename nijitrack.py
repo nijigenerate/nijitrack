@@ -15,15 +15,21 @@ from scipy.spatial.transform import Rotation as R
 from pynput import keyboard
 from threading import Thread
 
-# グローバルキーボードリスナーの定義
+# Global keybord listner
 def on_key_press(key):
     try:
         print(f"[KeyPress] {key.char}")
     except AttributeError:
         print(f"[SpecialKey] {key}")
 
+def on_key_release(key):
+    try:
+        print(f"[KeyRelease] {key.char}")
+    except AttributeError:
+        print(f"[SpecialKey] {key}")
+
 def start_keyboard_listener():
-    listener = keyboard.Listener(on_press=on_key_press)
+    listener = keyboard.Listener(on_press=on_key_press, on_release=on_key_release)
     listener.daemon = True
     listener.start()
 
@@ -243,7 +249,7 @@ if __name__ == "__main__":
 
         ret, frame = cap.read()
         if not ret:
-            break
+            sys.exit(-1)
 
         if args.flip:
             frame = cv2.flip(frame, 1)
