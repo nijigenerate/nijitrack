@@ -84,21 +84,11 @@ def list_video_devices(max_devices=10):
         import AVFoundation
         deviceList = AVFoundation.AVCaptureDevice.devicesWithMediaType_(AVFoundation.AVMediaTypeVideo)
         deviceList = [d for d in deviceList]
-        deviceList = sorted(deviceList, key=lambda d: d.uniqueID)
-
-        """
-        discovery_session = AVFoundation.AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes_mediaType_position_(
-            [AVFoundation.AVCaptureDeviceTypeBuiltInWideAngleCamera],
-            AVFoundation.AVMediaTypeVideo,
-            AVFoundation.AVCaptureDevicePositionUnspecified
-        )
-
-        deviceList = discovery_session.devices()
-        """
+        deviceList = sorted(deviceList, key=lambda d: d.uniqueID())
         for i, device in enumerate(deviceList):
             name = device.localizedName()
             unique_id = device.uniqueID()
-            devices.append({"id": i, "name": name})
+            devices.append({"id": i, "name": name, "uuid": device.uniqueID()})
 
     else:
         for i in range(max_devices):
