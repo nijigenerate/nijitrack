@@ -42,8 +42,8 @@ def list_video_devices(max_devices=10):
     import platform, subprocess
     devices = []
     current_os = platform.system()
-    if current_os == "Linux":
-        try:
+    try:
+        if current_os == "Linux":
             result = subprocess.run(["v4l2-ctl", "--list-devices"], capture_output=True, text=True)
             output = result.stdout
             current_name = None
@@ -61,36 +61,24 @@ def list_video_devices(max_devices=10):
                                 devices.append({"id": id_int, "name": current_name})
                         except Exception:
                             pass
-        except Exception:
-            for i in range(max_devices):
-                cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    devices.append({"id": i, "name": f"Device {i}"})
-                    cap.release()
-    elif current_os == "Windows":
-        try:
-            import wmi
-            c = wmi.WMI()
-            for cam in c.Win32_PnPEntity():
-                if cam.Description and ("camera" in cam.Description.lower() or "video" in cam.Description.lower()):
-                    devices.append({"id": len(devices), "name": cam.Description})
-        except Exception:
-            for i in range(max_devices):
-                cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    devices.append({"id": i, "name": f"Device {i}"})
-                    cap.release()
-    elif current_os == "Darwin":
-        import AVFoundation
-        deviceList = AVFoundation.AVCaptureDevice.devicesWithMediaType_(AVFoundation.AVMediaTypeVideo)
-        deviceList = [d for d in deviceList]
-        deviceList = sorted(deviceList, key=lambda d: d.uniqueID())
-        for i, device in enumerate(deviceList):
-            name = device.localizedName()
-            unique_id = device.uniqueID()
-            devices.append({"id": i, "name": name, "uuid": device.uniqueID()})
+        elif current_os == "Windows":
+            from pygrabber.dshow_graph import FilterGraph
 
-    else:
+            graph = FilterGraph()
+            device_names = graph.get_input_devices()
+            devices = [{"id": i, "name": name} for i, name in enumerate(device_names)]
+
+        elif current_os == "Darwin":
+            import AVFoundation
+            deviceList = AVFoundation.AVCaptureDevice.devicesWithMediaType_(AVFoundation.AVMediaTypeVideo)
+            deviceList = [d for d in deviceList]
+            deviceList = sorted(deviceList, key=lambda d: d.uniqueID())
+            for i, device in enumerate(deviceList):
+                name = device.localizedName()
+                unique_id = device.uniqueID()
+                devices.append({"id": i, "name": name, "uuid": device.uniqueID()})
+
+    except Exception:
         for i in range(max_devices):
             cap = cv2.VideoCapture(i)
             if cap.isOpened():

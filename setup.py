@@ -31,7 +31,7 @@ download_model(MODEL_URL, MODEL_DEST)
 extra_requires = []
 current_os = platform.system()
 if current_os == "Windows":
-    extra_requires = ["wmi"]
+    extra_requires = ["pygrabber"]
 elif current_os == "Linux":
     extra_requires = []
 elif current_os == "Darwin":
