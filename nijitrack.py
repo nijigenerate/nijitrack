@@ -81,20 +81,25 @@ def list_video_devices(max_devices=10):
                     devices.append({"id": i, "name": f"Device {i}"})
                     cap.release()
     elif current_os == "Darwin":
-        try:
-            result = subprocess.run(["system_profiler", "SPCameraDataType"], capture_output=True, text=True)
-            output = result.stdout
-            for i in range(max_devices):
-                cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    devices.append({"id": i, "name": f"Camera {i}"})
-                    cap.release()
-        except Exception:
-            for i in range(max_devices):
-                cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    devices.append({"id": i, "name": f"Device {i}"})
-                    cap.release()
+        import AVFoundation
+        deviceList = AVFoundation.AVCaptureDevice.devicesWithMediaType_(AVFoundation.AVMediaTypeVideo)
+        deviceList = [d for d in deviceList]
+        deviceList = sorted(deviceList, key=lambda d: d.uniqueID)
+
+        """
+        discovery_session = AVFoundation.AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes_mediaType_position_(
+            [AVFoundation.AVCaptureDeviceTypeBuiltInWideAngleCamera],
+            AVFoundation.AVMediaTypeVideo,
+            AVFoundation.AVCaptureDevicePositionUnspecified
+        )
+
+        deviceList = discovery_session.devices()
+        """
+        for i, device in enumerate(deviceList):
+            name = device.localizedName()
+            unique_id = device.uniqueID()
+            devices.append({"id": i, "name": name})
+
     else:
         for i in range(max_devices):
             cap = cv2.VideoCapture(i)
@@ -157,7 +162,7 @@ def get_gaze_left(landmarks):
 def render_frame(frame, width, height, landmarks, blendshapes, yaw, pitch, roll, nose, right_gaze, left_gaze, show_video, show_wire, show_text, show_blend):
     display = frame.copy() if show_video else np.zeros_like(frame)
 
-    if show_wire:
+    if show_wire and landmarks:
         for connection in FACE_CONNECTIONS:
             start_idx, end_idx = connection
             pt1 = landmarks[start_idx]
@@ -192,7 +197,7 @@ def render_frame(frame, width, height, landmarks, blendshapes, yaw, pitch, roll,
     return display
 
 if __name__ == "__main__":
-    start_keyboard_listener()  # ✅ グローバルキーボード入力を監視
+    start_keyboard_listener()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--list-devices", action="store_true")
@@ -259,6 +264,10 @@ if __name__ == "__main__":
         timestamp = int(time.time() * 1000)
         result = landmarker.detect_for_video(mp_image, timestamp)
 
+        landmarks = None
+        yaw, pitch, roll, nose = (None,None,None,None)
+        right_gaze, left_gaze = (None, None)
+
         if result.face_landmarks:
             landmarks = result.face_landmarks[0]
             pts = np.array([[lm.x, lm.y, lm.z] for lm in landmarks])
@@ -286,25 +295,25 @@ if __name__ == "__main__":
                     osc_client.send_message("/VMC/Ext/Blend/Val", [bs.category_name, bs.score])
                 osc_client.send_message("/VMC/Ext/Blend/Apply", [])
 
-            if args.show:
-                height, width = frame.shape[:2]
-                display = render_frame(
-                    frame, width, height, landmarks,
-                    blendshapes if result.face_blendshapes else [],
-                    yaw, pitch, roll, nose,
-                    right_gaze, left_gaze,
-                    show_video, show_wire, show_text, show_blend
-                )
-                cv2.imshow("MediaPipe Face", display)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord('v'):
-                    show_video = not show_video
-                elif key == ord('w'):
-                    show_wire = not show_wire
-                elif key == ord('t'):
-                    show_text = not show_text
-                elif key == ord('b'):
-                    show_blend = not show_blend
+        if args.show:
+            height, width = frame.shape[:2]
+            display = render_frame(
+                frame, width, height, landmarks,
+                blendshapes if result.face_blendshapes else [],
+                yaw, pitch, roll, nose,
+                right_gaze, left_gaze,
+                show_video, show_wire, show_text, show_blend
+            )
+            cv2.imshow("MediaPipe Face", display)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('v'):
+                show_video = not show_video
+            elif key == ord('w'):
+                show_wire = not show_wire
+            elif key == ord('t'):
+                show_text = not show_text
+            elif key == ord('b'):
+                show_blend = not show_blend
 
     cap.release()
     if args.show:

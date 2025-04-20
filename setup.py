@@ -28,16 +28,14 @@ MODEL_DEST = os.path.join(here, "face_landmarker_v2_with_blendshapes.task")
 download_model(MODEL_URL, MODEL_DEST)
 
 # Set up OS-specific extra requirements.
-extra_requires = {}
+extra_requires = []
 current_os = platform.system()
 if current_os == "Windows":
-    extra_requires["windows"] = ["wmi"]
+    extra_requires = ["wmi"]
 elif current_os == "Linux":
-    extra_requires["linux"] = []
+    extra_requires = []
 elif current_os == "Darwin":
-    extra_requires["darwin"] = []
-else:
-    extra_requires["other"] = []
+    extra_requires = ["pyobjc-framework-AVFoundation","pyobjc-core"]
 
 setup(
     name="nijitrack",
@@ -56,8 +54,7 @@ setup(
         "scipy",
         "pynput"
         # Removed "requests"
-    ],
-    extras_require=extra_requires,
+    ] + extra_requires,
     entry_points={
         "console_scripts": [
             "nijitrack = nijitrack.nijitrack:main",
