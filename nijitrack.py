@@ -3,6 +3,7 @@ import json
 import cv2
 import time
 import math
+import re
 import sys
 import os
 import numpy as np
@@ -44,23 +45,48 @@ def list_video_devices(max_devices=10):
     current_os = platform.system()
     try:
         if current_os == "Linux":
-            result = subprocess.run(["v4l2-ctl", "--list-devices"], capture_output=True, text=True)
-            output = result.stdout
-            current_name = None
-            for line in output.splitlines():
+            output = subprocess.check_output(['v4l2-ctl', '--list-devices'], text=True)
+            lines = output.splitlines()
+
+            device_list = []
+            current_device = None
+            for line in lines:
                 if line.strip() == "":
                     continue
-                if not line.startswith("\t"):
-                    current_name = line.strip()
+                if not line.startswith('\t'):  # device header line
+                    if current_device:
+                        device_list.append(current_device)
+                    current_device = {
+                        "name": line.strip(),
+                        "paths": []
+                    }
                 else:
-                    dev_path = line.strip()
-                    if dev_path.startswith("/dev/video"):
-                        try:
-                            id_int = int(dev_path.replace("/dev/video", ""))
-                            if id_int < max_devices and not any(d["id"] == id_int for d in devices):
-                                devices.append({"id": id_int, "name": current_name})
-                        except Exception:
-                            pass
+                    path = line.strip()
+                    if path.startswith('/dev/video'):
+                        current_device["paths"].append(path)
+            if current_device:
+                device_list.append(current_device)
+ 
+            for device in device_list:
+                for path in device["paths"]:
+                    try:
+                        desc = subprocess.check_output(['v4l2-ctl', '--device=' + path, '--all'], text=True)
+                        device_caps_match = re.search(r'Device Caps\s+:.*?\n((?:\s+.+\n)+)', desc)
+                        matched = False
+                        if device_caps_match:
+                            caps_block = device_caps_match.group(1)
+                            if 'Video Capture' in caps_block:
+                                matched = True
+                        if matched:
+                            try:
+                                id_int = int(path.replace("/dev/video", ""))
+                                devices.append({"id": id_int, "name": device["name"], "path": path})
+                                break 
+                            except Exception:
+                                pass
+                    except subprocess.CalledProcessError:
+                        continue
+
         elif current_os == "Windows":
             from pygrabber.dshow_graph import FilterGraph
 
@@ -78,7 +104,9 @@ def list_video_devices(max_devices=10):
                 unique_id = device.uniqueID()
                 devices.append({"id": i, "name": name, "uuid": device.uniqueID()})
 
-    except Exception:
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         for i in range(max_devices):
             cap = cv2.VideoCapture(i)
             if cap.isOpened():
