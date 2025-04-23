@@ -19,13 +19,15 @@ from threading import Thread
 # Global keybord listner
 def on_key_press(key):
     try:
-        print(f"[KeyPress] {key.char}")
+        osc_client.send_message("/VMC/Ext/Key",[1, key.char, ord(key.char)])
+#        print(f"[KeyPress] {key.char}")
     except AttributeError:
         print(f"[SpecialKey] {key}")
 
 def on_key_release(key):
     try:
-        print(f"[KeyRelease] {key.char}")
+        osc_client.send_message("/VMC/Ext/Key",[0, key.char, ord(key.char)])
+#        print(f"[KeyRelease] {key.char}")
     except AttributeError:
         print(f"[SpecialKey] {key}")
 
