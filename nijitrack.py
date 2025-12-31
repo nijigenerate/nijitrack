@@ -7,11 +7,18 @@ import re
 import sys
 import os
 import numpy as np
-import mediapipe as mp
+from mediapipe import Image, ImageFormat
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from pythonosc.udp_client import SimpleUDPClient
 from scipy.spatial.transform import Rotation as R
+from face_mesh_connections import (
+    FACEMESH_TESSELATION,
+    FACEMESH_CONTOURS,
+    FACEMESH_IRISES,
+)
+
+osc_client = None
 
 from pynput import keyboard
 from threading import Thread
@@ -20,26 +27,29 @@ from threading import Thread
 def on_key_press(key):
     try:
         osc_client.send_message("/VMC/Ext/Key",[1, key.char, ord(key.char)])
-#        print(f"[KeyPress] {key.char}")
     except AttributeError:
         print(f"[SpecialKey] {key}")
+    except Exception:
+        pass
 
 def on_key_release(key):
     try:
         osc_client.send_message("/VMC/Ext/Key",[0, key.char, ord(key.char)])
-#        print(f"[KeyRelease] {key.char}")
     except AttributeError:
         print(f"[SpecialKey] {key}")
+    except Exception:
+        pass
 
 def start_keyboard_listener():
     listener = keyboard.Listener(on_press=on_key_press, on_release=on_key_release)
     listener.daemon = True
     listener.start()
 
-mp_face_mesh = mp.solutions.face_mesh
-FACE_CONNECTIONS = mp_face_mesh.FACEMESH_TESSELATION.union(
-    mp_face_mesh.FACEMESH_CONTOURS
-).union(mp_face_mesh.FACEMESH_IRISES)
+FACE_CONNECTIONS = (
+    FACEMESH_TESSELATION
+    | FACEMESH_CONTOURS
+    | FACEMESH_IRISES
+)
 
 def list_video_devices(max_devices=10):
     import platform, subprocess
@@ -205,8 +215,6 @@ def render_frame(frame, width, height, landmarks, blendshapes, yaw, pitch, roll,
     return display
 
 if __name__ == "__main__":
-    start_keyboard_listener()
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--list-devices", action="store_true")
     parser.add_argument("--device", type=int)
@@ -229,6 +237,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     osc_client = SimpleUDPClient(args.osc_host, args.osc_port)
+    start_keyboard_listener()
 
     model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "face_landmarker_v2_with_blendshapes.task")
     base_options = python.BaseOptions(model_asset_path=model_path)
@@ -268,7 +277,7 @@ if __name__ == "__main__":
             frame = cv2.flip(frame, 1)
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        mp_image = Image(image_format=ImageFormat.SRGB, data=rgb)
         timestamp = int(time.time() * 1000)
         result = landmarker.detect_for_video(mp_image, timestamp)
 
