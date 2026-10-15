@@ -179,11 +179,12 @@ python3 tests/keyboard_integration.py --image /path/to/existing-face.jpg
 
 `.github/workflows/native-build.yml`はmain/native-experimentalへのpush、PR、手動起動に対応します。
 Linux x86-64（Ubuntu 24.04）、Windows x86-64（VS 2022）、macOS arm64（macOS 15）で
-本体とOS別キーボード部品をビルドし、CLI起動・引数エラー・インストール後の起動を検証します。
+本体とOS別キーボード部品をビルドし、CLI起動・引数エラー・子プロセスの引数と終了状態・インストール後の起動を検証します。
 SDKは上流の固定ReleaseをSHA-256で検証して取得します。WindowsではDLLに対応するリンク用の
 import libraryを公式C APIの宣言に合わせて生成します。独自のC ABI実装は追加しません。
 
 成果物`nijitrack-native-<OS・architecture>`は実行ファイル、共有ライブラリ、ライセンスを含みます。
+WindowsはZIP、Linux/macOSは実行権限を保持したtar.gz形式です。
 モデル・顔画像・動画・キャプチャ結果は取得せず、成果物にも含めません。モデルは既存版のものを
 `--model`で指定します。動画・カメラ利用時はFFmpegを別途PATHへ配置してください。
 Linuxのキーボード機能には実行時もlibX11/libXtstが必要です。

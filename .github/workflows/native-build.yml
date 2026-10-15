@@ -76,9 +76,22 @@ jobs:
           else
             native/install/bin/nijitrack-cpp --help
           fi
+      - name: Archive package preserving Unix executable permissions
+        env:
+          NATIVE_PLATFORM: ${{ matrix.platform }}
+        run: |
+          python - <<'PYTHON'
+          import os
+          from pathlib import Path
+          import shutil
+          destination = Path("native/dist")
+          destination.mkdir(parents=True, exist_ok=True)
+          kind = "zip" if os.name == "nt" else "gztar"
+          shutil.make_archive(str(destination / ("nijitrack-native-" + os.environ["NATIVE_PLATFORM"])), kind, root_dir="native/install")
+          PYTHON
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nijitrack-native-${{ matrix.platform }}
-          path: native/install/
+          path: native/dist/*
           if-no-files-found: error
           retention-days: 7
