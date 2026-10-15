@@ -3,9 +3,36 @@
 MediaPipe Tasksの**公式C APIを直接呼ぶ**Linux x86-64 / Windows x86-64 / macOS arm64用試作です。
 このディレクトリは`nijitrack`リポジトリの`native-experimental`ブランチで管理します。
 推論・姿勢計算・視線計算・JSON出力・OSC送信はC++で実装しています。
-Pythonインタープリター、Python版MediaPipe、Bazel、OpenCV開発ヘッダーは実行・ビルドに不要です。
-動画・カメラのデコードに限りFFmpegコマンドを子プロセスとして利用します。
+Pythonインタープリター、Python版MediaPipe、Bazelは実行・ビルドに不要です。OpenCVのC++開発パッケージはビルドに必要です。
+全OSでカメラ・動画をOpenCVのVideoCapture、プレビューをOpenCVのHighGUIで扱います。ffmpeg.exeなどの外部デコードプロセスは起動しません。
+映像取得はOpenCV版を採用し、バックエンド選択は全OS共通の`CAP_ANY`に委ねます。WindowsのMSMF・DirectShowとFFmpeg取得の比較では、DirectShowやFFmpegへの切替による安定性の明確な改善は確認できませんでした。
 追加の独自C ABIラッパーはありません。
+
+## Python版からの置き換え
+
+全OSで`nijitrack`（Windowsは`nijitrack.exe`）を生成します。`nijitrack-cpp`も同じ実装の別名として残します。
+PATH上のPython版をnative版に置き換えると、既存のオプションをそのまま使えます。
+
+```bash
+nijitrack --list-devices
+nijitrack --device 0 --osc-host 127.0.0.1 --osc-port 39540 --flip --show --show-video --show-wire --show-text --show-blend
+```
+
+- カメラ使用時はOSCを既定で`127.0.0.1:39540`へ送り、グローバルキーボード入力も有効です。
+- `--flip`はPython版と同じく推論前に画像を反転します。推論結果とOSCにも反映します。
+- `--show`でプレビューを開き、`--show-video`/`--show-wire`/`--show-text`/`--show-blend`で初期表示を選びます。`v/w/t/b`で表示を切り替え、ウィンドウを閉じると終了します。
+- 全OSで`--device N`に列挙の整数IDを使います。macOSはPython版と同じuniqueID順です。
+- カメラ使用時のJSON出力は既定で無効です。追加の`--json`または`--output FILE`で有効にできます。`--no-osc`/`--no-keyboard`で既定の送信・入力を無効にできます。
+- モデルは実行ファイルの隣とその親、作業ディレクトリとその親から探します。配布時はモデルを実行ファイルの隣に置くか`--model FILE`を指定します。自動取得はしません。
+
+プレビューは全OS共通のOpenCV HighGUIで実装しています。
+LinuxはOpenCVの開発パッケージとGUIバックエンドが必要です。グローバルキー取得にはX11/Xtstも使います。Wayland単独のグローバルキー取得は
+既存バックエンドと同じく未対応で、`--no-keyboard`かX11セッションを使います。
+`NIJITRACK_KEYBOARD=OFF`でビルドした場合も、カメラには`--no-keyboard`が必要です。
+macOSのカメラ・キーボードにはOSのカメラ/入力監視権限が必要です。
+
+今回の変更はWindowsでビルド、引数・既定値・反転・合成画像の描画・表示切替・終了・デバイス列挙を検証しています。
+Linux/macOSの実装は追加済みですが、この環境ではビルド・実機検証していません。実カメラによる顔推論も今回未検証です。
 
 ## 使用している資材
 
@@ -21,40 +48,40 @@ Pythonインタープリター、Python版MediaPipe、Bazel、OpenCV開発ヘッ
 
 ## 取得・ビルド・実行
 
-リポジトリのルートから、次の手順で実行します。Linuxの必要条件はglibc 2.39以上、C++20コンパイラ、Make、資材取得用のPython 3です。動画テストにはFFmpegも必要です。
+リポジトリのルートから、次の手順で実行します。CMake 3.20以上、C++20コンパイラ、OpenCV 4のcore/imgproc/videoio/highgui開発パッケージが必要です。Linuxはglibc 2.39以上とキーボード用のX11/Xtst開発パッケージも必要です。Windowsは資材準備時に一致するOpenCV 4.14.0公式開発パッケージを取得します。
 共有ライブラリ、モデル、実行ファイル、ビルド生成物はGitに登録していません。
 SDKは固定URLから取得し、展開前後にSHA-256を検証します。
 モデルは既存版で用意したリポジトリ直下のファイルを参照します。
 
 ```bash
 cd native
-python3 scripts/fetch_assets.py
-make -j2
+cmake -P scripts/setup_native.cmake
+cmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cmake --config Release --parallel 2
 mkdir -p results
-./build/nijitrack-cpp --device 0 --frames 300 --output results/camera.jsonl
+./build-cmake/nijitrack --device 0 --frames 300 --output results/camera.jsonl
 ```
 
-通常のMake/CMakeビルドではキーボード機能を無効にしています。
+通常のMake/CMakeビルドではキーボード機能を有効にしています。
 キーボード対応ビルドは下の「グローバルキーボード入力」を参照してください。
 実行時の共有ライブラリはLinux/macOSでは相対RPATH、Windowsでは実行ファイルと同じディレクトリから参照します。
 
 標準出力にJSONを出す場合は`--output`を省略します。ライブラリのログと集計は標準エラーに出します。
 
 ```bash
-./build/nijitrack-cpp --list-devices
-./build/nijitrack-cpp --device 0 --frames 300 --output results/camera.jsonl
+./build-cmake/nijitrack --list-devices
+./build-cmake/nijitrack --device 0 --frames 300 --output results/camera.jsonl
 ```
 
-カメラは`--device /dev/video0`でも指定できます。このWork環境ではデバイス列挙結果が`[]`であり、
-実カメラの撮影、カメラ権限、実機での遅延は未検証です。列挙はsysfsにあるvideoノードを表示します。
-撮影可能なノードかの能力照会・永続IDによる選択は今後の実装です。
+Linuxのカメラは`--device /dev/video0`でも指定できます。列挙時はV4L2能力を照会し、
+映像キャプチャ可能なノードだけを表示します。実カメラの撮影と遅延は今回未検証です。
 
 ## OSC / VMC
 
-OSC送信は明示的に`--osc-host`を指定した場合に有効です。
+カメラ利用時はOSC送信がPython版と同じく既定で有効です。画像・動画モードは`--osc-host`を指定した場合に有効です。
 
 ```bash
-./build/nijitrack-cpp --device 0 --osc-host 127.0.0.1 --osc-port 39540 --output results/osc.jsonl
+./build-cmake/nijitrack --device 0 --osc-host 127.0.0.1 --osc-port 39540 --output results/osc.jsonl
 ```
 
 顔1フレームあたり、Headを1メッセージ、視線4個、MediaPipe表情52個、最後にApplyを送ります。
@@ -80,9 +107,9 @@ Quaternionは回転行列から直接計算し、前フレームとの符号連�
 Euler角は旧版の表示式を引き継ぎ、±180度をunwrapします。
 MediaPipeの顔変換行列は別に出力し、既存互換の姿勢へ無断で置き換えていません。
 
-`--flip`は**オーバーレイ画像だけを反転**します。推論、左右の表情名、Yaw、視線は変わりません。
-オーバーレイは最初のフレームだけをPPM形式で保存します。常時プレビューGUI、ワイヤー、
-固定順の棒グラフ、Dへの組み込みは未実装です。
+`--flip`は**推論前の画像を反転**します。Python版と同じく左右・Yaw・視線に影響します。
+オーバーレイは最初のフレームだけをPPM形式で保存します。常時プレビューは`--show`を使います。
+Dへの組み込みは未実装です。
 
 ## グローバルキーボード入力
 
@@ -91,7 +118,7 @@ MediaPipeの顔変換行列は別に出力し、既存互換の姿勢へ無断�
 ```
 
 既存Python版の`pynput`で行っていたキー押下・解放のOSC送信を、C++のOS別バックエンドで実装しました。
-明示的に`--keyboard`を指定したときだけ有効です。OSC宛先の明示も必要です。
+カメラ利用時は既定で有効です。画像・動画モードでは`--keyboard`と`--osc-host`を明示します。
 `/VMC/Ext/Key`に型`,isi`で`[1または0, UTF-8文字, Unicodeコードポイント]`を送ります。
 特殊キーは送信しません。解放時は、Shiftを先に離しても押下時と同じ文字を送信します。
 IMEで確定した文章を取得する機能ではありません。
@@ -113,7 +140,7 @@ cmake --build build-keyboard -j2
 ```
 
 Makeなら`make clean`の後で`make KEYBOARD=1`を使います。通常のMake/CMakeの初期設定は
-キーボードバックエンド無効であり、映像推論にX11開発依存を必須にしません。
+キーボードバックエンド有効です。LinuxではプレビューにもX11開発依存が必要です。
 OS別のキーボード部品は単独でもビルドできます。
 
 ```bash
@@ -122,74 +149,70 @@ cmake --build build-keyboard-module
 ```
 
 Windows/macOSでの単独ビルド手順も上記です。macOSは入力監視権限が必要です。
-LinuxでXvfbとxdotoolを用意した場合、`python3 tests/keyboard_integration.py --image /path/to/existing-face.jpg`で実入力経路を検証できます。
+通常の検証はC++のCTestで行います。Linuxのグローバルキー取得はX11/Xtstを使うOS別アダプタです。
 UNIXソケット作成が禁止された環境では`NIJI_X11_TCP=1`を指定します。この場合、認証cookie付きの
 仮想Xサーバーにループバック接続し、テスト終了時に停止します。
-カメラがフレームを返さずに停止した場合など、入力ポンプが回らない期間の配信遅延は残ります。
+キーボード取得とHighGUIのイベント処理はメインスレッドで行い、映像取得・推論待ちから独立して動作します。
 
-動画は`--fps`（初期値30）に整え、`--width` / `--height`（初期値640 / 480）の範囲へ縮小します。
+カメラはOpenCVに`--fps`（初期値30）とキャプチャ寸法を要求します。カメラ・動画フレームは`--width` / `--height`（初期値640 / 480）の範囲へ縮小します。動画のフレームは複製せず順に読み込みます。
 動画のタイムスタンプは整形後のフレーム番号から、カメラは単調増加時計から設定します。
-現時点のカメラ入力は逐次処理で、最新フレームのみを保持する低遅延キューは未実装です。
+全OSとも標準C++のstd::thread、mutex、condition_variableで、VideoCaptureによる取得、推論・OSC送信、表示・キーボード処理を分離します。カメラは未処理の最新1フレームだけを保持して遅延の蓄積を防ぎ、動画ファイルは処理完了を待って全フレームを順番に渡します。表示用フレームも最新1枚だけを保持します。停止時は待機を解除して各スレッドをjoinします。ただし進行中のOpenCV読み込みは完了を待ちます。
+終了ログには処理FPS、取得数、破棄数、取得から処理完了までの平均時間も出力します。取得と表示のコードにOS固有APIはありません。デバイス名の列挙、実行ファイルのパス取得、OSCソケット、グローバルキー取得は共通C++/OpenCV APIで扱えないためOSアダプタに分離しています。
+
+実行中は5秒ごとに標準エラーへ`performance`ログを出力します。`capture_fps`は取得、`processed_fps`は推論処理、`face_fps`は顔を検出したフレームの実測レートです。`capture_interval`と`output_interval`はフレーム受信間隔と推論・OSC処理完了間隔、`read`はOpenCVの読み込み時間、`inference`は推論時間、`queue`はフレーム受信から推論側で取り出すまで、`frame_age`は受信からそのフレームの処理完了までの時間です。それぞれ平均・標準偏差・最大値をミリ秒で記録します。センサー内部や受信アプリ側の遅延は含みません。初回区間にはカメラ初期化時間も含まれます。
+カメラ開始時はバックエンド名、要求FPS、OpenCVが報告するFPS・寸法・FOURCCも記録します。報告FPSは実測値とは限りません。
 
 ## ソースからビルド
 
 必要条件: Linux x86-64、glibc 2.39以上、GCC 13相当のC++20コンパイラ、Make。
-動画・カメラにはFFmpegをPATHに置きます。CPU版のみです。
+カメラ・動画にはOpenCVのvideoioバックエンドを使います。外部FFmpeg実行ファイルは不要です。Windowsの動画デコーダDLLはOpenCV公式配布物から同梱します。CPU版のみです。
 
 ```bash
-make -j2
+cmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cmake --config Release --parallel 2
 ```
 
 CMake 3.20以上でも検証済みです。
 
 ```bash
 cmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Release
-cmake --build build-cmake -j2
+cmake --build build-ccmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cmake --config Release --parallel 2
 cmake --install build-cmake --prefix "$PWD/install"
 ./install/bin/nijitrack-cpp --model ../face_landmarker_v2_with_blendshapes.task --device 0 --output results/installed.jsonl
 ```
 
-モデルはアプリの暗黙のオンライン取得を避けるため、既定では作業ディレクトリの
-`../face_landmarker_v2_with_blendshapes.task`を参照します。別の場所から起動するときは`--model`で明示します。
+モデルは自動取得せず、実行ファイルの隣やリポジトリルートなどから
+`face_landmarker_v2_with_blendshapes.task`を探します。別のモデルは`--model`で明示します。
 
 ## 再検証
 
-Python 3は検証・SDK復元ツールを実行する場合だけ必要です。
-トラッキング本体からPythonを起動することはありません。
+資材準備とテストにPythonを使用しません。
 
 ```bash
-python3 scripts/verify_assets.py
+cmake -P scripts/setup_native.cmake
+cmake --build build-cmake --config Release --parallel 2
+ctest --test-dir build-cmake -C Release --output-on-failure
 ```
 
-顔画像・動画を使う検証は、利用者が既に持っている入力を明示した場合だけ実行します。
-テスト用入力は配布・取得・コピーしません。画像は顔が1人、動画は全フレームに顔が1人映り、
-5フレーム以上あり、開始・終了で顔位置が変わるものを指定してください。
-
-```bash
-python3 tests/integration.py --binary build/nijitrack-cpp --image /path/to/existing-face.jpg --video /path/to/existing-video.mp4
-python3 tests/keyboard_integration.py --image /path/to/existing-face.jpg
-```
-
-指定入力による検証では、ランドマーク・表情・姿勢・OSC・反転・エラー処理を確認します。
-出力JSONL・オーバーレイ・ログはGit管理外の`results/`へ保存します。
-入力を指定しない場合は、引数エラーで終了し、画像取得を行いません。
-既存版との差分は`COMPATIBILITY.md`を参照してください。
+C++テストはOpenCVで合成動画を生成・読み込みし、BGR→RGB変換、縮小、EOF、ワイヤー・文字・棒グラフの描画、CLIとOSCを確認します。GUIを開かず、カメラや顔画像にはアクセスしません。
+既存のPythonベースの追加テストスクリプトはこのビルド・CI手順では実行しません。
 
 ## GitHub Actionsによる3 OSビルド
 
 `.github/workflows/native-build.yml`はmain/native-experimentalへのpush、PR、手動起動に対応します。
 Linux x86-64（Ubuntu 24.04）、Windows x86-64（VS 2022）、macOS arm64（macOS 15）で
 本体とOS別キーボード部品をビルドし、CLI起動・引数エラー・子プロセスの引数と終了状態・インストール後の起動を検証します。
-SDKは上流の固定ReleaseをSHA-256で検証して取得します。WindowsではDLLに対応するリンク用の
+SDKはCMakeスクリプトで上流の固定ReleaseをSHA-256検証して取得します。Linuxはlibopencv-dev、macOSはHomebrew OpenCVを利用します。WindowsではDLLに対応するリンク用の
 import libraryを公式C APIの宣言に合わせて生成します。独自のC ABI実装は追加しません。
 
 成果物`nijitrack-native-<OS・architecture>`は実行ファイル、共有ライブラリ、ライセンスを含みます。
 WindowsはZIP、Linux/macOSは実行権限を保持したtar.gz形式です。
 モデル・顔画像・動画・キャプチャ結果は取得せず、成果物にも含めません。モデルは既存版のものを
-`--model`で指定します。動画・カメラ利用時はFFmpegを別途PATHへ配置してください。
+`--model`で指定します。Linux/macOSはOpenCVの実行時ライブラリも必要です。WindowsのOpenCV動画デコーダDLLは同梱します。
 Linuxのキーボード機能には実行時もlibX11/libXtstが必要です。
 
-Windows/macOSのローカルビルドは`python scripts/fetch_assets.py`の後、次を使います。
+Windows/macOSのローカルビルドは`cmake -P scripts/setup_native.cmake`の後、次を使います。
 
 ```bash
 cmake -S . -B build-cmake -DNIJITRACK_KEYBOARD=ON
@@ -198,8 +221,8 @@ cmake --install build-cmake --config Release --prefix install
 ```
 
 WindowsではVS 2022のx64コンパイラ、macOSではarm64のApple Clangを使います。
-Windowsカメラは`--device "カメラのDirectShow名"`、macOSは`--device 0`を使います。
-Windowsの数値デバイス指定とWindows/macOSの`--list-devices`は未実装としてエラーを返します。
+全OSで`--list-devices`と`--device 0`を使います。
+WindowsはDirectShow名、macOSはuniqueIDや名前も追加で指定できます。
 カメラ・入力監視権限・実キー取得・顔推論の実機検証は、この画像なしCIには含めていません。
 
 ## Nightly / 仮リリース

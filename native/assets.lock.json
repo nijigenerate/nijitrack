@@ -36,6 +36,15 @@
     "vendor/include/mediapipe/tasks/c/vision/face_landmarker/face_landmarker.h": "42cbb330e9d51066476a30e6a00bb078f69d9989cc46d89424e0e9f738c8c90b",
     "vendor/include/mediapipe/tasks/c/vision/face_landmarker/face_landmarker_result.h": "7479dcdf871bbf35741dbe846ae4862df90d8b7f8715b1053cc45c151885798f",
     "vendor/keyboard/LICENSE.libXtst": "304f78731e1e0e78132fbba4e1909c8642878a3b8c4837b36cb2d38891bf2204",
-    "vendor/keyboard/SOURCE.txt": "4c8c8ee682d030d0da70c4e4a6cebcff530bb3a9fd25afd1be344b8f9cd5e228"
+    "vendor/keyboard/SOURCE.txt": "4c8c8ee682d030d0da70c4e4a6cebcff530bb3a9fd25afd1be344b8f9cd5e228",
+    "vendor/face_mesh_connections.py": "cc7171e44d0612db38720cb2fd2516c395992cdd7457efe341543be6f3c22d87"
+  },
+  "opencv": {
+    "version": "4.14.0",
+    "source_commit": "0654a42e19215ef25b1d367d822f3c630447e7c7",
+    "windows": {
+      "url": "https://github.com/opencv/opencv/releases/download/4.14.0/opencv-4.14.0-windows.exe",
+      "sha256": "5f266a8b73bed535962d7e861a6457e32a0dd5f463ad0a7cf8707a135469be63"
+    }
   }
 }

@@ -1,24 +1,44 @@
-# 既存Python版との差分
+# Python版CLIとの互換性
 
-比較元: `nijigenerate/nijitrack`の`nijitrack.py`を読み、試作に必要な機能を再照合しました。
+比較元はこのブランチの`nijitrack.py`です。全OSで`nijitrack`を生成・インストールし、
+従来の`nijitrack-cpp`も同じプログラムの別名として残します。
 
-| 既存機能 | C++試作での状態 |
+| Python版の機能 | native版 |
 |---|---|
-| FaceLandmarker VIDEO / BlendShapes | 実装・実推論検証済み |
-| 頭部姿勢・鼻位置・視線・OSC | 実装・OSC受信検証済み。鼻位置は正規化座標 |
-| グローバルキー押下・解放 | Linux/X11で実装・検証済み。明示的な`--keyboard`で有効化 |
-| キーボードのOS差吸収 | Windows/macOSバックエンドをCIビルド対象に追加。実キー取得は実機未検証 |
-| 特殊キー | 旧版もOSC送信せずログ表示のみ。試作では送信せず、ログも出さない |
-| `--list-devices` | Linuxのsysfs列挙のみ。旧版のV4L2能力照会・Windows DirectShow・macOS AVFoundation列挙は未移植 |
-| `--device` | FFmpeg経由でLinux/V4L2、Windows/DirectShow名指定、macOS/AVFoundationに対応。実機未検証 |
-| `--osc-host` / `--osc-port` | 実装。旧版の宛先既定値は維持せず、送信は宛先指定時のみ |
-| `--flip` | オーバーレイ表示のみ反転。旧コードの推論前反転による左右・Yawへの影響を避ける |
-| `--show` | 常時プレビューウィンドウは未移植 |
-| `--show-video` / `--show-wire` | 未移植。現時点は最初のフレームのランドマーク付き画像出力 |
-| `--show-text` / `--show-blend` | 未移植。数値はJSONLに出力 |
-| v/w/t/bキーで表示切替 | プレビューGUIが未実装のため未移植 |
-| 初回モデル取得 | アプリ内自動取得はしない。既存版の`face_landmarker_v2_with_blendshapes.task`を共有 |
-| Windows/macOSビルド | プロセス起動・UDP・SDKリンクを移植しCI対象に追加。カメラ列挙とGUIは未移植 |
+| `-h` / `--help` | 対応。`--name=value`と一意の長いオプションの省略形も対応 |
+| `--list-devices` | Windows/DirectShow、Linux/V4L2能力照会、macOS/AVFoundation。整数IDと名前をJSON出力 |
+| `--device N` | 全OSで整数IDをOpenCV VideoCaptureに渡す。Python版と同じCAP_ANYで取得する |
+| `--osc-host` / `--osc-port` | カメラ利用時は`127.0.0.1:39540`が既定 |
+| `--flip` | 推論前に画像を左右反転。姿勢・視線・OSCにも反映 |
+| `--show` | 全OS共通のOpenCV HighGUIによる常時プレビュー |
+| `--show-video` | プレビューの背景映像。無指定時は黒背景 |
+| `--show-wire` | MediaPipe公式の接続定義と478ランドマーク |
+| `--show-text` | 角度・鼻位置・両眼の視線 |
+| `--show-blend` | カテゴリ名・値・棒グラフ |
+| `v/w/t/b` | プレビュー各要素の実行中切替 |
+| ウィンドウを閉じる | 処理を終了 |
+| グローバルキー押下・解放 | カメラ利用時は既定で有効。既存のOS別バックエンドを使用 |
 
-この試作は既存版の全機能移植が完了した版ではありません。
-MediaPipe C APIの直接利用、推論、OSC、およびLinux/X11キーボード経路を確認する試作です。
+`--show-*`だけではウィンドウを開きません。Python版同様に`--show`も指定します。
+カメラ使用時のJSONL標準出力は既定で無効です。
+
+追加の画像・動画処理は`--image`/`--video`、JSONLは`--json`/`--output`、
+既定の送信・キー取得の無効化は`--no-osc`/`--no-keyboard`を使います。
+画像・動画モードのOSCとキーボードは従来の試作同様に明示指定で有効です。
+
+モデルは自動取得せず、実行ファイルの隣と親、作業ディレクトリとその親から探します。
+配布時は実行ファイルの隣に置くか`--model FILE`を明示してください。
+表示バックエンドはOpenCVに委ねます。Wayland単独のグローバルキー取得は既存バックエンド同様に未対応です。
+キーボードを無効にしてビルドした場合はカメラ起動に`--no-keyboard`が必要です。
+macOSのカメラ/入力監視権限はOS側で許可します。
+
+今回の検証はWindowsでのReleaseビルド、引数・既定値・反転・合成フレーム描画・表示切替・終了、
+DirectShow列挙、インストール後の起動です。Linux/macOSも実装済みですが今回の環境ではビルド・実機検証していません。
+実カメラによる顔推論・実キー取得・顔画像を使った統合検証は今回実施していません。
+
+互換性はCLIと既定動作についてのものです。推論のフレーム処理、細かな文字描画、
+デバイス一覧の空白や順序（Windows/Linux）、エラー文言の完全一致は保証しません。
+
+映像取得と表示にはOS専用の独自実装を使わず、OpenCVのVideoCapture/cvtColor/resize/imshow/waitKeyを使います。デバイスの名前・ID列挙とグローバルキー入力などのOSアダプタだけを残します。外部ffmpeg.exeは起動しません。
+
+取得、推論・フレームOSC送信、表示・キー入力は標準C++のスレッドと同期機構で分離しています。カメラ入力とプレビューは最新1フレームを保持し、動画ファイル入力は順序を保って全フレームを処理します。HighGUIはメインスレッドで動作します。停止時は進行中のOpenCV読み込みが戻ってからスレッドを終了します。

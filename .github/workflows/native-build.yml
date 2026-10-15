@@ -71,28 +71,28 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.source.outputs.sha }}
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.12'
       - name: Install Linux keyboard development dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libx11-dev libxtst-dev
-      - name: Check runner architecture and download pinned SDK
+          sudo apt-get install -y --no-install-recommends libx11-dev libxtst-dev libopencv-dev
+      - name: Install macOS OpenCV
+        if: runner.os == 'macOS'
+        run: brew install opencv
+      - name: Restore and verify native development assets without Python
         env:
           EXPECTED_PLATFORM: ${{ matrix.platform }}
         working-directory: native
-        run: |
-          python -c 'import os, sys; sys.path.insert(0, "scripts"); from fetch_assets import host_platform; assert host_platform() == os.environ["EXPECTED_PLATFORM"], host_platform()'
-          python scripts/fetch_assets.py
-          python scripts/verify_assets.py
+        run: cmake -DNATIVE_PLATFORM="$EXPECTED_PLATFORM" -P scripts/setup_native.cmake
       - name: Configure Windows
         if: runner.os == 'Windows'
         run: cmake -S native -B native/build-ci -G "Visual Studio 17 2022" -A x64 -DNIJITRACK_KEYBOARD=ON -DBUILD_TESTING=ON
       - name: Configure Linux and macOS
         if: runner.os != 'Windows'
-        run: cmake -S native -B native/build-ci -DCMAKE_BUILD_TYPE=Release -DNIJITRACK_KEYBOARD=ON -DBUILD_TESTING=ON
+        run: |
+          args=()
+          if [[ "$RUNNER_OS" == "macOS" ]]; then args+=("-DOpenCV_DIR=$(brew --prefix opencv)/lib/cmake/opencv4"); fi
+          cmake -S native -B native/build-ci -DCMAKE_BUILD_TYPE=Release -DNIJITRACK_KEYBOARD=ON -DBUILD_TESTING=ON "${args[@]}"
       - name: Build tracker and native keyboard backend
         run: cmake --build native/build-ci --config Release --parallel 2
       - name: Test startup, CLI validation and child process handling
@@ -102,23 +102,23 @@ jobs:
       - name: Test packaged executable startup
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
+            native/install/bin/nijitrack.exe -h
             native/install/bin/nijitrack-cpp.exe --help
           else
+            native/install/bin/nijitrack -h
             native/install/bin/nijitrack-cpp --help
           fi
       - name: Archive package preserving Unix executable permissions
         env:
           NATIVE_PLATFORM: ${{ matrix.platform }}
         run: |
-          python - <<'PYTHON'
-          import os
-          from pathlib import Path
-          import shutil
-          destination = Path("native/dist")
-          destination.mkdir(parents=True, exist_ok=True)
-          kind = "zip" if os.name == "nt" else "gztar"
-          shutil.make_archive(str(destination / ("nijitrack-native-" + os.environ["NATIVE_PLATFORM"])), kind, root_dir="native/install")
-          PYTHON
+          mkdir -p native/dist
+          cd native/install
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cmake -E tar cf "../dist/nijitrack-native-${NATIVE_PLATFORM}.zip" --format=zip .
+          else
+            cmake -E tar czf "../dist/nijitrack-native-${NATIVE_PLATFORM}.tar.gz" --format=gnutar .
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nijitrack-native-${{ matrix.platform }}
@@ -146,23 +146,11 @@ jobs:
       - name: Check packages and generate checksums
         shell: bash
         run: |
-          python3 - <<'PYTHON'
-          import hashlib
-          from pathlib import Path
-          root = Path('dist')
-          expected = {
-              'nijitrack-native-linux-x86_64.tar.gz',
-              'nijitrack-native-macos-arm64.tar.gz',
-              'nijitrack-native-windows-x86_64.zip',
-          }
-          assert {p.name for p in root.iterdir()} == expected, 'Missing or unexpected packages'
-          lines = []
-          for name in sorted(expected):
-              data = (root / name).read_bytes()
-              assert data, name
-              lines.append(hashlib.sha256(data).hexdigest() + '  ' + name)
-          (root / 'SHA256SUMS').write_text('\n'.join(lines) + '\n')
-          PYTHON
+          expected=(nijitrack-native-linux-x86_64.tar.gz nijitrack-native-macos-arm64.tar.gz nijitrack-native-windows-x86_64.zip)
+          for package in "${expected[@]}"; do test -s "dist/$package"; done
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 3
+          cd dist
+          sha256sum "${expected[@]}" > SHA256SUMS
       - name: Publish or update rolling prerelease
         shell: bash
         env:
@@ -181,8 +169,8 @@ jobs:
           - Includes executable, MediaPipe shared libraries and licenses.
           - No model, face image, video or captured data is included.
           - Reuse your existing face_landmarker_v2_with_blendshapes.task with --model.
-          - FFmpeg must be installed separately for camera/video input.
-          - Linux requires glibc 2.39+, libX11 and libXtst; Windows requires the MSVC runtime.
+          - Camera/video capture and preview use OpenCV; no external FFmpeg executable is needed.
+          - Linux requires glibc 2.39+, OpenCV, libX11 and libXtst; macOS requires OpenCV; Windows requires the MSVC runtime.
           - Camera permissions, global keyboard permissions and real-face tracking are not tested by CI.
 
           This rolling prerelease is updated after all three platform builds and startup tests pass.

@@ -3,6 +3,9 @@
 /results/
 /models/
 /vendor/downloads/
+/vendor/ffmpeg/
+/vendor/vc-runtime/
+/vendor/opencv/
 /vendor/sdk/*.so*
 /vendor/sdk/*.dll
 /vendor/sdk/*.dylib

@@ -76,19 +76,28 @@ def main():
     assert all(b["timestamp_ms"] > a["timestamp_ms"] for a, b in zip(frames, frames[1:]))
     checks.append("landmarks-blendshapes-pose-matrix-contract")
 
-    run("flip", "--image", image, "--output", "results/flip.jsonl",
+    # Independently mirror a lossless RGB fixture, then compare inference from
+    # --flip against inference on that already mirrored input.
+    source_ppm = temporary_path / "source.ppm"
+    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", image,
+                    "-frames:v", "1", "-pix_fmt", "rgb24", str(source_ppm)], check=True)
+    ppm = source_ppm.read_bytes().split(b"\n", 3)
+    assert ppm[0] == b"P6" and ppm[2] == b"255"
+    w, h = map(int, ppm[1].split())
+    mirrored_ppm = temporary_path / "mirrored.ppm"
+    mirrored_ppm.write_bytes(b"\n".join(ppm[:3]) + b"\n" +
+        b"".join(b"".join(ppm[3][(y*w+x)*3:(y*w+x+1)*3]
+                            for x in reversed(range(w))) for y in range(h)))
+    run("flip", "--image", str(source_ppm), "--output", "results/flip.jsonl",
         "--overlay", "results/flip.ppm", "--flip")
+    run("pre-mirrored", "--image", str(mirrored_ppm), "--output", "results/pre-mirrored.jsonl",
+        "--overlay", "results/pre-mirrored.ppm")
     flipped = json.loads((out / "flip.jsonl").read_text())
+    expected = json.loads((out / "pre-mirrored.jsonl").read_text())
     for key in ("landmarks", "blendshapes", "pose", "facial_transformation_matrix"):
-        assert flipped[key] == frames[0][key], key
-    original = (out / "overlay.ppm").read_bytes().split(b"\n", 3)
-    mirror = (out / "flip.ppm").read_bytes().split(b"\n", 3)
-    assert original[:3] == mirror[:3]
-    w, h = map(int, original[1].split())
-    expected = b"".join(b"".join(original[3][(y*w+x)*3:(y*w+x+1)*3]
-                                for x in reversed(range(w))) for y in range(h))
-    assert expected == mirror[3]
-    checks.append("flip-is-display-only")
+        assert flipped[key] == expected[key], key
+    assert (out / "flip.ppm").read_bytes() == (out / "pre-mirrored.ppm").read_bytes()
+    checks.append("flip-before-inference")
 
     black = temporary_path / "black.ppm"
     black.write_bytes(b"P6\n640 480\n255\n" + bytes(640*480*3))
