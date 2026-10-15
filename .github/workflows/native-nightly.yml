@@ -1,0 +1,23 @@
+name: Native nightly
+
+on:
+  schedule:
+    # 03:17 JST daily (GitHub schedules can be delayed).
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-nightly-scheduler
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    permissions:
+      contents: write
+    uses: nijigenerate/nijitrack/.github/workflows/native-build.yml@native-experimental
+    with:
+      source_ref: native-experimental
+      publish: true
