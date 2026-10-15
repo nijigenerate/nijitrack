@@ -201,3 +201,15 @@ WindowsではVS 2022のx64コンパイラ、macOSではarm64のApple Clangを使
 Windowsカメラは`--device "カメラのDirectShow名"`、macOSは`--device 0`を使います。
 Windowsの数値デバイス指定とWindows/macOSの`--list-devices`は未実装としてエラーを返します。
 カメラ・入力監視権限・実キー取得・顔推論の実機検証は、この画像なしCIには含めていません。
+
+## Nightly / 仮リリース
+
+毎日03:17 JST（18:17 UTC）に、mainの`native-nightly.yml`が`native-experimental`の
+再利用可能なビルドActionを起動します。GitHub側の混雑により開始が遅れる場合があります。
+mainのActions画面から手動実行もできます。
+
+3 OSを同一コミットからビルドし、全ビルド・テストが成功した場合だけ
+https://github.com/nijigenerate/nijitrack/releases/tag/native-nightly
+のプレリリースを更新します。3 OSのアーカイブと`SHA256SUMS`を配置します。
+画像・動画・モデルは含めません。リリース本文にビルド元SHAとAction実行URLを記録します。
+`native-nightly`タグは成功したソースコミットへ更新するため、固定版ではありません。
