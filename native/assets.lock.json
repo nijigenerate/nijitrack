@@ -1,0 +1,29 @@
+{
+  "sdk": {
+    "repository": "https://github.com/tqphan/libmediapipe",
+    "release": "mediapipe-v1.0.0-f9e8d75",
+    "build_recipe_sha": "f9e8d750429322f5e65a22e0d0becb0d3be6e4e6",
+    "source_sha": "6d31f1ebc3284db74d211d62bdc4f0a0c29ea120",
+    "url": "https://github.com/tqphan/libmediapipe/releases/download/mediapipe-v1.0.0-f9e8d75/libmediapipe-v1.0.0-linux-x86_64.zip",
+    "archive_sha256": "729c4a75758529544c407ce2e156ebaefc96161eee5a9c043a53ac8b0aaf4779"
+  },
+  "downloads": {},
+  "files": {
+    "vendor/include/mediapipe/tasks/c/components/containers/category.h": "ac8ebb4230fda8ab19588290984a2554e3d23968512c7354655555a1071a1508",
+    "vendor/include/mediapipe/tasks/c/components/containers/landmark.h": "54c7da6a199c207b90c4fde0f5d3523b439cb270ab7dfa3b566effe76909ccf6",
+    "vendor/include/mediapipe/tasks/c/components/containers/matrix.h": "d1c3dbf40a54cd977a4210b131b0cc313dcb348ca61a1e8d5b864c3e24c5d8d9",
+    "vendor/include/mediapipe/tasks/c/core/base_options.h": "2ad12983dd2f05584c6cb924a773d8c92babc68afdb60f48856cec5bd15583e5",
+    "vendor/include/mediapipe/tasks/c/core/common.h": "da8c204e16db43ac0c09a7d195402703589f9c3f93ccea2d75eca2c6236296bf",
+    "vendor/include/mediapipe/tasks/c/core/mp_status.h": "50088265cd4900239491c36f4bd5e9b1e3f244ca8fbdd1232c3f1ff28140e042",
+    "vendor/include/mediapipe/tasks/c/vision/core/image.h": "ee9740678186c949e940a2e35332e64856fdc6e23078dbc807e848cc85ca3285",
+    "vendor/include/mediapipe/tasks/c/vision/face_landmarker/face_landmarker.h": "42cbb330e9d51066476a30e6a00bb078f69d9989cc46d89424e0e9f738c8c90b",
+    "vendor/include/mediapipe/tasks/c/vision/face_landmarker/face_landmarker_result.h": "7479dcdf871bbf35741dbe846ae4862df90d8b7f8715b1053cc45c151885798f",
+    "vendor/sdk/LICENSE.mediapipe": "8707eef0533987efc5b155d64761eeb6e20793f50b9bd1a68dad1cf4719d0ed8",
+    "vendor/sdk/LICENSE.opencv": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "vendor/sdk/SHA256SUMS": "e1564c5009ec2a8d20748d46bbe77c2276a2a4a68e76f346a8997b12b120197b",
+    "vendor/sdk/SOURCE.txt": "8d321fd249dcd003a2bae33468adeed513f97dde3cb514a204d6148672e2373b",
+    "vendor/sdk/libmediapipe.so": "c4e11a4d6bb55866744d1c8e4a928a2334811a5f7ec8bd48c1fcd2b8b074cc0e",
+    "vendor/keyboard/LICENSE.libXtst": "304f78731e1e0e78132fbba4e1909c8642878a3b8c4837b36cb2d38891bf2204",
+    "vendor/keyboard/SOURCE.txt": "4c8c8ee682d030d0da70c4e4a6cebcff530bb3a9fd25afd1be344b8f9cd5e228"
+  }
+}

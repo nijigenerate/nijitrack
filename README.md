@@ -60,6 +60,13 @@ nijitrack --device 0 [other options]
 
 ## Development
 
+An experimental C++ implementation using the official MediaPipe Tasks C API is
+available in [`native/`](native/README.md) on the `native-experimental` branch.
+It includes reproducible SDK downloads and reuse of the existing model, Linux build instructions, OSC
+output, OS-specific keyboard backends, and integration tests. See
+[`native/COMPATIBILITY.md`](native/COMPATIBILITY.md) for the remaining differences
+from the Python implementation.
+
 nijitrack is developed with cross-platform compatibility in mind. Developers should:
 
 - **Ensure Cross-Platform Support:**  

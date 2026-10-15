@@ -1,0 +1,12 @@
+/build*/
+/install/
+/results/
+/models/
+/vendor/downloads/
+/vendor/sdk/*.so*
+/vendor/sdk/*.dll
+/vendor/sdk/*.dylib
+/vendor/keyboard/*.so*
+/fixtures/
+__pycache__/
+*.partial
