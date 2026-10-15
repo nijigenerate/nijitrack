@@ -1,0 +1,2 @@
+# Preserve the exact upstream header bytes on Windows for SHA-256 validation.
+* text eol=lf
