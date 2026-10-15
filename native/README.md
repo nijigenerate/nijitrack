@@ -1,6 +1,6 @@
 # nijitrack native experimental
 
-MediaPipe Tasksの**公式C APIを直接呼ぶ**Linux x86-64用試作です。
+MediaPipe Tasksの**公式C APIを直接呼ぶ**Linux x86-64 / Windows x86-64 / macOS arm64用試作です。
 このディレクトリは`nijitrack`リポジトリの`native-experimental`ブランチで管理します。
 推論・姿勢計算・視線計算・JSON出力・OSC送信はC++で実装しています。
 Pythonインタープリター、Python版MediaPipe、Bazel、OpenCV開発ヘッダーは実行・ビルドに不要です。
@@ -21,8 +21,7 @@ Pythonインタープリター、Python版MediaPipe、Bazel、OpenCV開発ヘッ
 
 ## 取得・ビルド・実行
 
-リポジトリのルートから、次の手順で実行します。必要条件はLinux x86-64 / glibc 2.39以上、
-C++20コンパイラ、Make、資材取得用のPython 3です。動画テストにはFFmpegも必要です。
+リポジトリのルートから、次の手順で実行します。Linuxの必要条件はglibc 2.39以上、C++20コンパイラ、Make、資材取得用のPython 3です。動画テストにはFFmpegも必要です。
 共有ライブラリ、モデル、実行ファイル、ビルド生成物はGitに登録していません。
 SDKは固定URLから取得し、展開前後にSHA-256を検証します。
 モデルは既存版で用意したリポジトリ直下のファイルを参照します。
@@ -37,7 +36,7 @@ mkdir -p results
 
 通常のMake/CMakeビルドではキーボード機能を無効にしています。
 キーボード対応ビルドは下の「グローバルキーボード入力」を参照してください。
-実行時の共有ライブラリは相対RPATHで参照します。
+実行時の共有ライブラリはLinux/macOSでは相対RPATH、Windowsでは実行ファイルと同じディレクトリから参照します。
 
 標準出力にJSONを出す場合は`--output`を省略します。ライブラリのログと集計は標準エラーに出します。
 
@@ -83,7 +82,7 @@ MediaPipeの顔変換行列は別に出力し、既存互換の姿勢へ無断�
 
 `--flip`は**オーバーレイ画像だけを反転**します。推論、左右の表情名、Yaw、視線は変わりません。
 オーバーレイは最初のフレームだけをPPM形式で保存します。常時プレビューGUI、ワイヤー、
-固定順の棒グラフ、Dへの組み込み、アプリ全体のWindows/macOS対応は未実装です。
+固定順の棒グラフ、Dへの組み込みは未実装です。
 
 ## グローバルキーボード入力
 
@@ -100,8 +99,8 @@ IMEで確定した文章を取得する機能ではありません。
 | OS | バックエンド | 検証 |
 |---|---|---|
 | Linux/X11 | RECORD拡張 | Xvfb/XTESTで押下・解放・Shift・OSC・推論同時動作を検証済み |
-| Windows | WH_KEYBOARD_LL / ToUnicodeEx | ソース実装のみ。このLinux環境ではビルド・実機動作未検証 |
-| macOS | CGEventTap / Unicode取得 | ソース実装のみ。このLinux環境ではビルド・実機動作未検証 |
+| Windows | WH_KEYBOARD_LL / ToUnicodeEx | GitHub Actionsでビルド。実機でのキー取得はCI対象外 |
+| macOS | CGEventTap / Unicode取得 | GitHub Actionsでビルド。入力監視権限を伴う実機動作はCI対象外 |
 | Linux/Wayland | 未実装 | XWaylandを全デスクトップのキャプチャと偽らず、明示的なエラーにする |
 
 Linuxのビルドでは通常`libx11-dev`と`libxtst-dev`を用意し、以下で有効にします。
@@ -122,7 +121,7 @@ cmake -S keyboard -B build-keyboard-module -DNIJITRACK_KEYBOARD=ON
 cmake --build build-keyboard-module
 ```
 
-Windows/macOSでの単独ビルド手順も上記ですが、未検証です。macOSは入力監視権限が必要です。
+Windows/macOSでの単独ビルド手順も上記です。macOSは入力監視権限が必要です。
 LinuxでXvfbとxdotoolを用意した場合、`python3 tests/keyboard_integration.py --image /path/to/existing-face.jpg`で実入力経路を検証できます。
 UNIXソケット作成が禁止された環境では`NIJI_X11_TCP=1`を指定します。この場合、認証cookie付きの
 仮想Xサーバーにループバック接続し、テスト終了時に停止します。
@@ -175,3 +174,29 @@ python3 tests/keyboard_integration.py --image /path/to/existing-face.jpg
 出力JSONL・オーバーレイ・ログはGit管理外の`results/`へ保存します。
 入力を指定しない場合は、引数エラーで終了し、画像取得を行いません。
 既存版との差分は`COMPATIBILITY.md`を参照してください。
+
+## GitHub Actionsによる3 OSビルド
+
+`.github/workflows/native-build.yml`はmain/native-experimentalへのpush、PR、手動起動に対応します。
+Linux x86-64（Ubuntu 24.04）、Windows x86-64（VS 2022）、macOS arm64（macOS 15）で
+本体とOS別キーボード部品をビルドし、CLI起動・引数エラー・インストール後の起動を検証します。
+SDKは上流の固定ReleaseをSHA-256で検証して取得します。WindowsではDLLに対応するリンク用の
+import libraryを公式C APIの宣言に合わせて生成します。独自のC ABI実装は追加しません。
+
+成果物`nijitrack-native-<OS・architecture>`は実行ファイル、共有ライブラリ、ライセンスを含みます。
+モデル・顔画像・動画・キャプチャ結果は取得せず、成果物にも含めません。モデルは既存版のものを
+`--model`で指定します。動画・カメラ利用時はFFmpegを別途PATHへ配置してください。
+Linuxのキーボード機能には実行時もlibX11/libXtstが必要です。
+
+Windows/macOSのローカルビルドは`python scripts/fetch_assets.py`の後、次を使います。
+
+```bash
+cmake -S . -B build-cmake -DNIJITRACK_KEYBOARD=ON
+cmake --build build-cmake --config Release
+cmake --install build-cmake --config Release --prefix install
+```
+
+WindowsではVS 2022のx64コンパイラ、macOSではarm64のApple Clangを使います。
+Windowsカメラは`--device "カメラのDirectShow名"`、macOSは`--device 0`を使います。
+Windowsの数値デバイス指定とWindows/macOSの`--list-devices`は未実装としてエラーを返します。
+カメラ・入力監視権限・実キー取得・顔推論の実機検証は、この画像なしCIには含めていません。

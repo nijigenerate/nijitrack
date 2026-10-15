@@ -1,0 +1,84 @@
+name: Native build
+
+on:
+  push:
+    branches: [main, native-experimental]
+    paths:
+      - 'native/**'
+      - '.github/workflows/native-build.yml'
+  pull_request:
+    paths:
+      - 'native/**'
+      - '.github/workflows/native-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+          - platform: windows-x86_64
+            runner: windows-2022
+          - platform: macos-arm64
+            runner: macos-15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux keyboard development dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libx11-dev libxtst-dev
+      - name: Check runner architecture and download pinned SDK
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+        working-directory: native
+        run: |
+          python -c 'import os, sys; sys.path.insert(0, "scripts"); from fetch_assets import host_platform; assert host_platform() == os.environ["EXPECTED_PLATFORM"], host_platform()'
+          python scripts/fetch_assets.py
+          python scripts/verify_assets.py
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        run: cmake -S native -B native/build-ci -G "Visual Studio 17 2022" -A x64 -DNIJITRACK_KEYBOARD=ON -DBUILD_TESTING=ON
+      - name: Configure Linux and macOS
+        if: runner.os != 'Windows'
+        run: cmake -S native -B native/build-ci -DCMAKE_BUILD_TYPE=Release -DNIJITRACK_KEYBOARD=ON -DBUILD_TESTING=ON
+      - name: Build tracker and native keyboard backend
+        run: cmake --build native/build-ci --config Release --parallel 2
+      - name: Test executable startup and argument validation
+        run: ctest --test-dir native/build-ci -C Release --output-on-failure
+      - name: Package executable, SDK libraries and licenses
+        run: cmake --install native/build-ci --config Release --prefix "$GITHUB_WORKSPACE/native/install"
+      - name: Test packaged executable startup
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            native/install/bin/nijitrack-cpp.exe --help
+          else
+            native/install/bin/nijitrack-cpp --help
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nijitrack-native-${{ matrix.platform }}
+          path: native/install/
+          if-no-files-found: error
+          retention-days: 7

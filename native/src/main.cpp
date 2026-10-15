@@ -1,6 +1,6 @@
 #include "keyboard.hpp"
+#include "platform.hpp"
 #include "tracking.hpp"
-#include <arpa/inet.h>
 #include <bit>
 #include <cctype>
 #include <cerrno>
@@ -8,23 +8,15 @@
 #include <climits>
 #include <cstdio>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <netdb.h>
-#include <signal.h>
-#include <spawn.h>
 #include <sstream>
 #include <string>
-#include <sys/socket.h>
-#include <sys/wait.h>
-#include <unistd.h>
 #include <vector>
-extern char **environ;
 namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
 
@@ -83,7 +75,13 @@ public:
     o.base_options.model_asset_path = model.c_str();
     o.base_options.file_descriptor = -1;
     o.base_options.delegate = MP_DELEGATE_CPU;
+#ifdef _WIN32
+    o.base_options.host_system = MP_HOST_SYSTEM_WINDOWS;
+#elif defined(__APPLE__)
+    o.base_options.host_system = MP_HOST_SYSTEM_MAC;
+#else
     o.base_options.host_system = MP_HOST_SYSTEM_LINUX;
+#endif
     o.running_mode = MP_RUNNING_MODE_VIDEO;
     o.num_faces = 1;
     o.output_face_blendshapes = true;
@@ -116,10 +114,10 @@ public:
     check(status, error, "detect video frame");
   }
 };
-// POSIX spawn passes arguments directly; filenames are never interpolated into a shell.
+// FFmpeg receives arguments directly without a command shell.
 class VideoReader {
   FILE *stream_ = nullptr;
-  pid_t child_ = -1;
+  std::unique_ptr<niji::platform::PipeProcess> process_;
   std::string token() {
     std::string s;
     int c;
@@ -144,62 +142,26 @@ public:
   VideoReader(const std::string &input, bool camera, int width, int height, double fps) {
     std::vector<std::string> args = {"ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error"};
     if (camera) {
+#ifdef _WIN32
+      args.insert(args.end(), {"-f", "dshow", "-framerate", std::to_string(fps)});
+#elif defined(__APPLE__)
+      args.insert(args.end(), {"-f", "avfoundation", "-framerate", std::to_string(fps)});
+#else
       args.insert(args.end(), {"-f", "v4l2", "-framerate", std::to_string(fps)});
+#endif
     }
     args.insert(args.end(),
                 {"-i", input, "-an", "-vf",
                  "fps=" + std::to_string(fps) + ",scale=" + std::to_string(width) + ":" +
                      std::to_string(height) + ":force_original_aspect_ratio=decrease",
                  "-threads", "1", "-f", "image2pipe", "-vcodec", "ppm", "-"});
-    int fd[2];
-    if (pipe2(fd, O_CLOEXEC) < 0)
-      throw std::runtime_error("pipe failed");
-    posix_spawn_file_actions_t actions;
-    posix_spawn_file_actions_init(&actions);
-    posix_spawn_file_actions_adddup2(&actions, fd[1], STDOUT_FILENO);
-    posix_spawn_file_actions_addclose(&actions, fd[0]);
-    posix_spawn_file_actions_addclose(&actions, fd[1]);
-    std::vector<char *> argv;
-    for (auto &arg : args)
-      argv.push_back(arg.data());
-    argv.push_back(nullptr);
-    int status = posix_spawnp(&child_, "ffmpeg", &actions, nullptr, argv.data(), environ);
-    posix_spawn_file_actions_destroy(&actions);
-    ::close(fd[1]);
-    if (status) {
-      ::close(fd[0]);
-      child_ = -1;
-      throw std::runtime_error(std::string("ffmpeg: ") + std::strerror(status));
-    }
-    stream_ = fdopen(fd[0], "rb");
-    if (!stream_) {
-      ::close(fd[0]);
-      kill(child_, SIGTERM);
-      waitpid(child_, nullptr, 0);
-      child_ = -1;
-      throw std::runtime_error("fdopen failed");
-    }
-  }
-  ~VideoReader() {
-    if (stream_)
-      fclose(stream_);
-    if (child_ > 0) {
-      kill(child_, SIGTERM);
-      while (waitpid(child_, nullptr, 0) < 0 && errno == EINTR) {
-      }
-    }
+    process_ = std::make_unique<niji::platform::PipeProcess>(std::move(args));
+    stream_ = process_->stream();
   }
   bool next(std::vector<uint8_t> &pixels, int &w, int &h) {
     auto magic = token();
     if (magic.empty()) {
-      int status = 0;
-      pid_t done;
-      do {
-        done = waitpid(child_, &status, 0);
-      } while (done < 0 && errno == EINTR);
-      child_ = -1;
-      if (done < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
-        throw std::runtime_error("ffmpeg decoding failed");
+      process_->finish();
       return false;
     }
     if (magic != "P6")
@@ -215,7 +177,8 @@ public:
   }
 };
 class Osc {
-  int fd_ = -1;
+  niji::platform::Network network_;
+  niji::platform::Socket fd_ = niji::platform::invalid_socket;
   std::vector<uint8_t> packet_;
   void string(const std::string &s) {
     packet_.insert(packet_.end(), s.begin(), s.end());
@@ -241,24 +204,25 @@ public:
     if (error)
       throw std::runtime_error(std::string("OSC host: ") + gai_strerror(error));
     for (auto *a = list; a; a = a->ai_next) {
-      fd_ = socket(a->ai_family, a->ai_socktype | SOCK_CLOEXEC, a->ai_protocol);
-      if (fd_ >= 0 && connect(fd_, a->ai_addr, a->ai_addrlen) == 0)
+      fd_ = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+      if (fd_ != niji::platform::invalid_socket &&
+          connect(fd_, a->ai_addr, static_cast<int>(a->ai_addrlen)) == 0)
         break;
-      if (fd_ >= 0)
-        ::close(fd_);
-      fd_ = -1;
+      if (fd_ != niji::platform::invalid_socket)
+        niji::platform::close_socket(fd_);
+      fd_ = niji::platform::invalid_socket;
     }
     freeaddrinfo(list);
-    if (fd_ < 0)
+    if (fd_ == niji::platform::invalid_socket)
       throw std::runtime_error("Cannot open OSC destination");
   }
   ~Osc() {
-    if (fd_ >= 0)
-      ::close(fd_);
+    if (fd_ != niji::platform::invalid_socket)
+      niji::platform::close_socket(fd_);
   }
   void message(const std::string &address, const std::string &name,
                const std::vector<float> &values) {
-    if (fd_ < 0)
+    if (fd_ == niji::platform::invalid_socket)
       return;
     packet_.clear();
     string(address);
@@ -271,7 +235,7 @@ public:
       string(name);
     for (float v : values)
       number(v);
-    auto n = send(fd_, packet_.data(), packet_.size(), 0);
+    auto n = niji::platform::send_packet(fd_, packet_);
     if (n < 0 || static_cast<size_t>(n) != packet_.size())
       throw std::runtime_error("OSC send failed");
   }
@@ -279,7 +243,7 @@ public:
     message("/VMC/Ext/Blend/Val", name, {static_cast<float>(v)});
   }
   void key(const niji::keyboard::Event &event) {
-    if (fd_ < 0)
+    if (fd_ == niji::platform::invalid_socket)
       return;
     packet_.clear();
     string("/VMC/Ext/Key");
@@ -292,7 +256,7 @@ public:
     word(event.pressed ? 1U : 0U);
     string(event.text);
     word(event.codepoint);
-    auto sent = send(fd_, packet_.data(), packet_.size(), 0);
+    auto sent = niji::platform::send_packet(fd_, packet_);
     if (sent < 0 || static_cast<size_t>(sent) != packet_.size())
       throw std::runtime_error("OSC key send failed");
   }
@@ -419,8 +383,8 @@ static int integer(const std::string &s) {
   return v;
 }
 struct Options {
-  std::string model = "../face_landmarker_v2_with_blendshapes.task", image, video, device, osc_host, output_path,
-              overlay_path;
+  std::string model = "../face_landmarker_v2_with_blendshapes.task", image, video, device, osc_host,
+              output_path, overlay_path;
   int width = 640, height = 480, frames = 0, repeat = 1, port = 39540;
   double fps = 30;
   bool flip = false, list = false, keyboard = false;
@@ -436,7 +400,8 @@ static Options parse(int argc, char **argv) {
     };
     if (a == "--help") {
       std::cout << "nijitrack-cpp --image FILE | --video FILE | --device N_OR_PATH\n"
-                   "  --model FILE       default: ../face_landmarker_v2_with_blendshapes.task\n  --output FILE     "
+                   "  --model FILE       default: ../face_landmarker_v2_with_blendshapes.task\n  "
+                   "--output FILE     "
                    " JSONL (default stdout)\n"
                    "  --overlay FILE     first frame + landmarks as PPM\n  --flip             "
                    "mirror overlay only; tracking stays unchanged\n"
@@ -512,6 +477,10 @@ static Options parse(int argc, char **argv) {
   return o;
 }
 static void devices() {
+#if defined(_WIN32) || defined(__APPLE__)
+  throw std::runtime_error("--list-devices is currently implemented on Linux only; use FFmpeg "
+                           "device enumeration on this OS");
+#else
   bool comma = false;
   std::cout << '[';
   std::vector<fs::path> entries;
@@ -530,6 +499,7 @@ static void devices() {
     comma = true;
   }
   std::cout << "]\n";
+#endif
 }
 int main(int argc, char **argv) {
   try {
@@ -595,8 +565,19 @@ int main(int argc, char **argv) {
         process(image.handle, static_cast<int64_t>(std::llround(i * 1000.0 / o.fps)));
     } else {
       std::string input = o.device.empty() ? o.video : o.device;
-      if (!o.device.empty() && input.find_first_not_of("0123456789") == std::string::npos)
-        input = "/dev/video" + input;
+      if (!o.device.empty()) {
+#ifdef _WIN32
+        if (input.find_first_not_of("0123456789") == std::string::npos)
+          throw std::runtime_error(
+              "Windows --device requires a DirectShow camera name, not an index");
+        input = "video=" + input;
+#elif defined(__APPLE__)
+        input += ":none";
+#else
+        if (input.find_first_not_of("0123456789") == std::string::npos)
+          input = "/dev/video" + input;
+#endif
+      }
       VideoReader reader(input, !o.device.empty(), o.width, o.height, o.fps);
       std::vector<uint8_t> rgb;
       int w = 0, h = 0;

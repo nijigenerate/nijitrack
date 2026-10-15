@@ -15,7 +15,7 @@ KEYBOARD_LIBS = $(X11_LIBS)
 endif
 .PHONY: all clean
 all: build/nijitrack-cpp
-build/nijitrack-cpp: src/main.cpp src/tracking.hpp $(wildcard keyboard/*.hpp) $(KEYBOARD_SOURCES) $(wildcard vendor/include/mediapipe/tasks/c/*/*.h vendor/include/mediapipe/tasks/c/*/*/*.h vendor/include/mediapipe/tasks/c/*/*/*/*.h)
+build/nijitrack-cpp: src/main.cpp src/tracking.hpp src/platform.hpp $(wildcard keyboard/*.hpp) $(KEYBOARD_SOURCES) $(wildcard vendor/include/mediapipe/tasks/c/*/*.h vendor/include/mediapipe/tasks/c/*/*/*.h vendor/include/mediapipe/tasks/c/*/*/*/*.h)
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -I$(INCLUDE_DIR) -Ikeyboard $(KEYBOARD_CFLAGS) src/main.cpp $(KEYBOARD_SOURCES) -L$(SDK_DIR) -lmediapipe $(KEYBOARD_LIBS) -Wl,-rpath,'$$ORIGIN/../vendor/sdk:$$ORIGIN/../vendor/keyboard' -o $@
 clean:

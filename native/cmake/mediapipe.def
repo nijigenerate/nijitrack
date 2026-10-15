@@ -1,0 +1,14 @@
+LIBRARY libmediapipe.dll
+EXPORTS
+  MpErrorFree
+  MpFaceLandmarkerClose
+  MpFaceLandmarkerCloseResult
+  MpFaceLandmarkerCreate
+  MpFaceLandmarkerDetectForVideo
+  MpImageCreateFromFile
+  MpImageCreateFromUint8Data
+  MpImageDataUint8
+  MpImageFree
+  MpImageGetChannels
+  MpImageGetHeight
+  MpImageGetWidth
