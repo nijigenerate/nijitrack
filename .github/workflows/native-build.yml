@@ -65,7 +65,7 @@ jobs:
         run: cmake -S native -B native/build-ci -DCMAKE_BUILD_TYPE=Release -DNIJITRACK_KEYBOARD=ON -DBUILD_TESTING=ON
       - name: Build tracker and native keyboard backend
         run: cmake --build native/build-ci --config Release --parallel 2
-      - name: Test executable startup and argument validation
+      - name: Test startup, CLI validation and child process handling
         run: ctest --test-dir native/build-ci -C Release --output-on-failure
       - name: Package executable, SDK libraries and licenses
         run: cmake --install native/build-ci --config Release --prefix "$GITHUB_WORKSPACE/native/install"
