@@ -6,15 +6,23 @@ on:
     paths:
       - 'native/**'
       - '.github/workflows/native-build.yml'
+      - '.github/workflows/native-nightly.yml'
+      - '.github/scripts/native-cache-transfer.cmake'
   pull_request:
     branches: [main]
     paths:
       - 'native/**'
       - '.github/workflows/native-build.yml'
+      - '.github/workflows/native-nightly.yml'
+      - '.github/scripts/native-cache-transfer.cmake'
   workflow_dispatch:
     inputs:
       publish:
         description: Update the native-nightly prerelease after all builds pass
+        type: boolean
+        default: false
+      export_cache:
+        description: Export existing native-experimental caches for main migration
         type: boolean
         default: false
   workflow_call:
@@ -30,6 +38,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: native-build-${{ github.ref }}
@@ -43,7 +52,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.source_ref || github.sha }}
+          ref: ${{ inputs.publish && 'refs/heads/main' || inputs.source_ref || github.sha }}
           persist-credentials: false
       - id: source
         shell: bash
@@ -53,7 +62,7 @@ jobs:
     needs: source
     name: ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -72,65 +81,220 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.source.outputs.sha }}
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.12'
-      - name: Install Linux keyboard development dependencies
+      - name: Install Linux media and keyboard development dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libx11-dev libxtst-dev
-      - name: Check runner architecture and download pinned SDK
-        env:
-          EXPECTED_PLATFORM: ${{ matrix.platform }}
-        working-directory: native
+          sudo apt-get install -y --no-install-recommends clang ninja-build binutils jq curl pkg-config libegl-dev libgles-dev libx11-dev libxtst-dev libasound2-dev libpulse-dev libudev-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libxss-dev libwayland-dev libxkbcommon-dev
+      - name: Install macOS media dependencies
+        if: runner.os == 'macOS'
+        run: brew install ninja pkg-config jq
+      - name: Identify hosted compiler and SDK image
+        id: toolchain
         run: |
-          python -c 'import os, sys; sys.path.insert(0, "scripts"); from fetch_assets import host_platform; assert host_platform() == os.environ["EXPECTED_PLATFORM"], host_platform()'
-          python scripts/fetch_assets.py
-          python scripts/verify_assets.py
-      - name: Configure Windows
-        if: runner.os == 'Windows'
-        run: cmake -S native -B native/build-ci -G "Visual Studio 17 2022" -A x64 -DNIJITRACK_KEYBOARD=ON -DBUILD_TESTING=ON
-      - name: Configure Linux and macOS
+          mkdir -p native/results/build-environment
+          # ImageVersion changes when hosted compilers or system SDKs change.
+          # Pinned downloaded compilers are also covered by the lockfile keys.
+          printf '%s\n' "$RUNNER_OS" "$RUNNER_ARCH" "${ImageOS:?}" "${ImageVersion:?}" > native/results/build-environment/ci-toolchain.txt
+          cmake --version >> native/results/build-environment/ci-toolchain.txt
+          if [[ "$RUNNER_OS" != "Windows" ]]; then
+            clang --version >> native/results/build-environment/ci-toolchain.txt
+          fi
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            xcodebuild -version >> native/results/build-environment/ci-toolchain.txt
+            xcrun --show-sdk-version >> native/results/build-environment/ci-toolchain.txt
+          fi
+          fingerprint=$(cmake -E sha256sum native/results/build-environment/ci-toolchain.txt)
+          echo "fingerprint=${fingerprint%% *}" >> "$GITHUB_OUTPUT"
+      - name: Compute cache keys
+        id: cache-keys
+        env:
+          TOOLS_KEY: native-tools-v1-${{ matrix.platform }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('native/toolchain*.lock.json', 'native/scripts/setup_tracking*', 'native/scripts/setup_native_toolchain.ps1') }}
+          SDK_KEY: native-sdk-v1-${{ matrix.platform }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('native/toolchain*.lock.json', 'native/assets.lock.json', 'native/patches/**', 'native/toolchain/**', 'native/scripts/*.sh', 'native/scripts/*.ps1', 'native/build.sh') }}
+        run: |
+          echo "tools=$TOOLS_KEY" >> "$GITHUB_OUTPUT"
+          echo "sdk=$SDK_KEY" >> "$GITHUB_OUTPUT"
+      - name: Restore verified tools and downloads
+        id: tools-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            native/vendor/toolchain
+            native/vendor/downloads
+            native/vendor/sources
+            native/build-sdl3
+          key: ${{ steps.cache-keys.outputs.tools }}
+      - name: Restore static tracking SDK
+        id: sdk-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: native/vendor/sdk-halide
+          # Exact keys only: never fall back to an SDK built from another recipe.
+          key: ${{ steps.cache-keys.outputs.sdk }}
+      - name: Validate native-experimental cache transfer source
+        id: cache-seed
+        if: vars.NATIVE_CACHE_SEED_RUN_ID != '' && (steps.tools-cache.outputs.cache-hit != 'true' || steps.sdk-cache.outputs.cache-hit != 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEED_RUN: ${{ vars.NATIVE_CACHE_SEED_RUN_ID }}
+          SEED_ARTIFACT: native-cache-seed-${{ matrix.platform }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SEED_RUN" --jq 'select(.head_branch == "native-experimental" and .conclusion == "success" and .path == ".github/workflows/native-build.yml") | .id' > "$RUNNER_TEMP/cache-seed-run.txt"
+          test "$(cat "$RUNNER_TEMP/cache-seed-run.txt")" = "$SEED_RUN"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SEED_RUN/artifacts" --jq '.artifacts[] | select(.expired == false) | .name' > "$RUNNER_TEMP/cache-seed-artifacts.txt"
+          available=false
+          while IFS= read -r name; do
+            if [[ "$name" == "$SEED_ARTIFACT" ]]; then available=true; fi
+          done < "$RUNNER_TEMP/cache-seed-artifacts.txt"
+          echo "available=$available" >> "$GITHUB_OUTPUT"
+      - name: Download existing branch caches
+        id: cache-download
+        if: steps.cache-seed.outputs.available == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: native-cache-seed-${{ matrix.platform }}
+          path: ${{ runner.temp }}/native-cache-seed
+          github-token: ${{ github.token }}
+          run-id: ${{ vars.NATIVE_CACHE_SEED_RUN_ID }}
+      - name: Import existing caches without rebuilding
+        id: cache-import
+        if: steps.cache-download.conclusion == 'success'
+        env:
+          NATIVE_CACHE_SEED_DIR: ${{ runner.temp }}/native-cache-seed
+          NATIVE_TOOLS_KEY: ${{ steps.cache-keys.outputs.tools }}
+          NATIVE_SDK_KEY: ${{ steps.cache-keys.outputs.sdk }}
+          NATIVE_TOOLS_HIT: ${{ steps.tools-cache.outputs.cache-hit }}
+          NATIVE_SDK_HIT: ${{ steps.sdk-cache.outputs.cache-hit }}
+        run: cmake -DMODE=import -P .github/scripts/native-cache-transfer.cmake
+      - name: Verify checked-in native headers and data
+        run: cmake -P native/scripts/setup_native.cmake
+      - name: Check shell script syntax
+        run: |
+          bash -n native/build.sh
+          for script in native/scripts/*.sh native/tests/*.sh; do bash -n "$script"; done
+      - name: Prepare Linux and macOS build tools
         if: runner.os != 'Windows'
-        run: cmake -S native -B native/build-ci -DCMAKE_BUILD_TYPE=Release -DNIJITRACK_KEYBOARD=ON -DBUILD_TESTING=ON
-      - name: Build tracker and native keyboard backend
-        run: cmake --build native/build-ci --config Release --parallel 2
-      - name: Test startup, CLI validation and child process handling
-        run: ctest --test-dir native/build-ci -C Release --output-on-failure
-      - name: Package executable, SDK libraries and licenses
-        run: cmake --install native/build-ci --config Release --prefix "$GITHUB_WORKSPACE/native/install"
+        run: bash native/build.sh setup
+      - name: Prepare Windows build tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& native/scripts/setup_native_toolchain.ps1'
+      - name: Save verified tools and downloads
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            native/vendor/toolchain
+            native/vendor/downloads
+            native/vendor/sources
+            native/build-sdl3
+          key: ${{ steps.tools-cache.outputs.cache-primary-key }}
+      - name: Prepare Linux and macOS patched sources
+        if: runner.os != 'Windows'
+        run: bash native/build.sh prepare
+      - name: Prepare Windows patched sources
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& native/scripts/prepare_mediapipe_halide.ps1'
+      - name: Build Linux and macOS static SDK
+        id: sdk-unix
+        if: runner.os != 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true' && steps.cache-import.outputs.sdk != 'true'
+        run: bash native/build.sh sdk
+      - name: Build Windows static SDK
+        id: sdk-windows
+        if: runner.os == 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true' && steps.cache-import.outputs.sdk != 'true'
+        shell: pwsh
+        run: |
+          & native/scripts/build_mediapipe_halide.ps1
+          & native/tests/patch_management.ps1 -Dependencies
+      - name: Save completed static tracking SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true' && (steps.sdk-unix.conclusion == 'success' || steps.sdk-windows.conclusion == 'success' || steps.cache-import.outputs.sdk == 'true')
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: native/vendor/sdk-halide
+          key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
+      - name: Build, test and audit Linux and macOS tracker
+        if: runner.os != 'Windows'
+        run: bash native/build.sh install
+      - name: Build, test and audit Windows tracker
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & native/scripts/build_native.ps1 -Install
+          ctest --test-dir native/build-mediapipe/halide --output-on-failure
+      - name: Test face and hand inference with verified official fixtures
+        run: bash native/tests/run_tracking_smoke.sh
       - name: Test packaged executable startup
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
+            native/install/bin/nijitrack.exe -h
             native/install/bin/nijitrack-cpp.exe --help
           else
+            native/install/bin/nijitrack -h
             native/install/bin/nijitrack-cpp --help
           fi
+      - name: Export existing caches for main migration
+        id: cache-export
+        if: github.ref == 'refs/heads/native-experimental' && (inputs.export_cache || vars.NATIVE_CACHE_SEED_RUN_ID == '')
+        env:
+          NATIVE_CACHE_SEED_DIR: ${{ runner.temp }}/native-cache-seed
+          NATIVE_TOOLS_KEY: ${{ steps.cache-keys.outputs.tools }}
+          NATIVE_SDK_KEY: ${{ steps.cache-keys.outputs.sdk }}
+        run: cmake -DMODE=export -P .github/scripts/native-cache-transfer.cmake
+      - name: Upload caches for cross-branch reuse
+        if: steps.cache-export.conclusion == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-cache-seed-${{ matrix.platform }}
+          path: ${{ runner.temp }}/native-cache-seed/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
       - name: Archive package preserving Unix executable permissions
         env:
           NATIVE_PLATFORM: ${{ matrix.platform }}
         run: |
-          python - <<'PYTHON'
-          import os
-          from pathlib import Path
-          import shutil
-          destination = Path("native/dist")
-          destination.mkdir(parents=True, exist_ok=True)
-          kind = "zip" if os.name == "nt" else "gztar"
-          shutil.make_archive(str(destination / ("nijitrack-native-" + os.environ["NATIVE_PLATFORM"])), kind, root_dir="native/install")
-          PYTHON
+          mkdir -p native/dist
+          cd native/install
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cmake -E tar cf "../dist/nijitrack-native-${NATIVE_PLATFORM}.zip" --format=zip .
+          else
+            cmake -E tar czf "../dist/nijitrack-native-${NATIVE_PLATFORM}.tar.gz" --format=gnutar .
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nijitrack-native-${{ matrix.platform }}
           path: native/dist/*
           if-no-files-found: error
           retention-days: 7
+      - name: Preserve build diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: diagnostics-${{ matrix.platform }}
+          path: |
+            native/results/build-environment/*.txt
+            native/results/build-environment/*.json
+            native/build-sdl-static/Testing/Temporary/LastTest.log
+            native/build-mediapipe/halide/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Report cache usage
+        if: always()
+        run: |
+          {
+            echo '### Native build cache'
+            echo 'Tools cache hit: ${{ steps.tools-cache.outputs.cache-hit }}'
+            echo 'Static SDK cache hit: ${{ steps.sdk-cache.outputs.cache-hit }}'
+            echo 'Transferred tools: ${{ steps.cache-import.outputs.tools }}'
+            echo 'Transferred SDK: ${{ steps.cache-import.outputs.sdk }}'
+            echo 'Tracker build, tests, inference and dependency audits run on every build.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     name: Update native nightly prerelease
     needs: [source, build]
-    if: inputs.publish && github.event_name != 'pull_request'
+    if: inputs.publish && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -147,23 +311,11 @@ jobs:
       - name: Check packages and generate checksums
         shell: bash
         run: |
-          python3 - <<'PYTHON'
-          import hashlib
-          from pathlib import Path
-          root = Path('dist')
-          expected = {
-              'nijitrack-native-linux-x86_64.tar.gz',
-              'nijitrack-native-macos-arm64.tar.gz',
-              'nijitrack-native-windows-x86_64.zip',
-          }
-          assert {p.name for p in root.iterdir()} == expected, 'Missing or unexpected packages'
-          lines = []
-          for name in sorted(expected):
-              data = (root / name).read_bytes()
-              assert data, name
-              lines.append(hashlib.sha256(data).hexdigest() + '  ' + name)
-          (root / 'SHA256SUMS').write_text('\n'.join(lines) + '\n')
-          PYTHON
+          expected=(nijitrack-native-linux-x86_64.tar.gz nijitrack-native-macos-arm64.tar.gz nijitrack-native-windows-x86_64.zip)
+          for package in "${expected[@]}"; do test -s "dist/$package"; done
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 3
+          cd dist
+          sha256sum "${expected[@]}" > SHA256SUMS
       - name: Publish or update rolling prerelease
         shell: bash
         env:
@@ -179,12 +331,12 @@ jobs:
           Build: https://github.com/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}
 
           - Windows x86-64 / macOS arm64 / Linux x86-64
-          - Includes executable, MediaPipe shared libraries and licenses.
+          - Includes executable with statically linked face/hand MediaPipe, SDL3 and licenses.
           - No model, face image, video or captured data is included.
           - Reuse your existing face_landmarker_v2_with_blendshapes.task with --model.
-          - FFmpeg must be installed separately for camera/video input.
-          - Linux requires glibc 2.39+, libX11 and libXtst; Windows requires the MSVC runtime.
-          - Camera permissions, global keyboard permissions and real-face tracking are not tested by CI.
+          - Camera capture and preview use SDL3; video file input is not supported.
+          - Linux requires libX11 and libXtst; Windows statically links the MSVC runtime.
+          - Camera permissions, global keyboard permissions and live camera tracking are not tested by CI.
 
           This rolling prerelease is updated after all three platform builds and startup tests pass.
           EOF_NOTES

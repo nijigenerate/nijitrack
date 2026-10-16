@@ -1,1 +1,0 @@
-Built from google-ai-edge/mediapipe v1.0.0 (6d31f1ebc3284db74d211d62bdc4f0a0c29ea120)

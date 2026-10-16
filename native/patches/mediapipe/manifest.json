@@ -1,0 +1,53 @@
+{
+  "upstream_asset": "mediapipe-source",
+  "upstream_version": "6d31f1ebc3284db74d211d62bdc4f0a0c29ea120",
+  "series": [
+    {
+      "patch": "mediapipe/0001-disable-python-workspace.patch",
+      "files": [
+        {
+          "path": "WORKSPACE",
+          "before": "dcaed81694c1b8d81fc0115abcf3f39f58981bb5947b621e65f4c024ba997976",
+          "after": "4728960b5903db2e6c188061e2cba78e0768332989874cb8fdef3bacb61b0b89"
+        }
+      ]
+    },
+    {
+      "patch": "mediapipe/0002-disable-python-module.patch",
+      "files": [
+        {
+          "path": "MODULE.bazel",
+          "before": "3214ebbd8805a65f7cde9df84287f0865d7e0856cb890a7b2cfe972c5ecc9a22",
+          "after": "95eb18d97bb3c3459f7ad94c94c5f78653b842fb432cbc56d7928b8fcb45a12f"
+        }
+      ]
+    },
+    {
+      "patch": "mediapipe/0003-share-zlib.patch",
+      "files": [
+        {
+          "path": "third_party/zlib.BUILD",
+          "before": "99eeabfdcf1e338e29245388e727f1a08e1403aa492606c0837e4b26fa9189a3",
+          "after": "5258385fe2ca2d1c9f16ce6ff705290b4d67f4cd4f0654bcf69def1e4c0cbb17"
+        }
+      ]
+    },
+    {
+      "patch": "mediapipe/0004-halide-preprocessing.patch",
+      "files": [
+        {
+          "path": "mediapipe/calculators/tensor/BUILD",
+          "before": "872d5f72dd814753dc247050ba81cc8664334dc9e40a5b4ba5493103c0bb3984",
+          "after": "00b7e03d610462c11c4f4f3370292047b5842d6fd280989310b584460868f925"
+        }
+      ]
+    }
+  ],
+  "overlays": [
+    {
+      "source": "toolchain/mediapipe/image_to_tensor_halide.cc",
+      "target": "mediapipe/calculators/tensor/image_to_tensor_converter_frame_buffer.cc",
+      "before": "3a56471827a81b9ce919292b1db52e97339a7e7afe1dbf79a3f6eedf07e15099"
+    }
+  ]
+}

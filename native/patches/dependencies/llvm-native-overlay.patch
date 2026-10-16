@@ -1,0 +1,73 @@
+diff --git a/utils/bazel/configure.bzl b/utils/bazel/configure.bzl
+index b976f39..53db743 100644
+--- a/utils/bazel/configure.bzl
++++ b/utils/bazel/configure.bzl
+@@ -31,42 +31,33 @@ DEFAULT_TARGETS = [
+ ]
+ 
+ def _overlay_directories(repository_ctx):
++    # NIJITRACK: native Starlark overlay; never invoke Python.
+     src_path = repository_ctx.path(Label("@llvm-raw//:WORKSPACE")).dirname
+-    bazel_path = src_path.get_child("utils").get_child("bazel")
+-    overlay_path = bazel_path.get_child("llvm-project-overlay")
+-    script_path = bazel_path.get_child("overlay_directories.py")
+-
+-    python_bin = repository_ctx.which("python3")
+-    if not python_bin:
+-        # Windows typically just defines "python" as python3. The script itself
+-        # contains a check to ensure python3.
+-        python_bin = repository_ctx.which("python")
+-
+-    if not python_bin:
+-        fail("Failed to find python3 binary")
+-
+-    cmd = [
+-        python_bin,
+-        script_path,
+-        "--src",
+-        src_path,
+-        "--overlay",
+-        overlay_path,
+-        "--target",
+-        ".",
+-    ]
+-    exec_result = repository_ctx.execute(cmd, timeout = 20)
+-
+-    if exec_result.return_code != 0:
+-        fail(("Failed to execute overlay script: '{cmd}'\n" +
+-              "Exited with code {return_code}\n" +
+-              "stdout:\n{stdout}\n" +
+-              "stderr:\n{stderr}\n").format(
+-            cmd = " ".join([str(arg) for arg in cmd]),
+-            return_code = exec_result.return_code,
+-            stdout = exec_result.stdout,
+-            stderr = exec_result.stderr,
+-        ))
++    overlay_path = src_path.get_child("utils").get_child("bazel").get_child("llvm-project-overlay")
++    pending = [""]
++    for depth in range(64):
++        following = []
++        for relative in pending:
++            src = src_path.get_child(relative) if relative else src_path
++            overlay = overlay_path.get_child(relative) if relative else overlay_path
++            entries = {entry.basename: entry for entry in overlay.readdir()}
++            repository_ctx.file((relative + "/" if relative else "") + ".nijitrack-overlay", "")
++            if src.exists:
++                for entry in src.readdir():
++                    if entry.basename not in entries:
++                        destination = relative + "/" + entry.basename if relative else entry.basename
++                        repository_ctx.symlink(entry, destination)
++            for name, entry in entries.items():
++                destination = relative + "/" + name if relative else name
++                if entry.is_dir:
++                    following.append(destination)
++                else:
++                    repository_ctx.symlink(entry, destination)
++        pending = following
++        if not pending:
++            break
++    if pending:
++        fail("LLVM overlay exceeds supported directory depth")
+ 
+ def _extract_cmake_settings(repository_ctx, llvm_cmake):
+     # The list to be written to vars.bzl

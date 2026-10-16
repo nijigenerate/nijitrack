@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: native-nightly-scheduler
@@ -15,8 +16,10 @@ concurrency:
 
 jobs:
   nightly:
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
+      actions: read
     uses: ./.github/workflows/native-build.yml
     with:
       source_ref: ${{ github.sha }}

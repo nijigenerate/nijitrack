@@ -1,0 +1,8 @@
+load("@bazel_tools//tools/python:toolchain.bzl", "py_runtime_pair")
+load(":defs.bzl", "interpreter")
+package(default_visibility = ["//visibility:public"])
+cc_library(name = "python_headers")
+alias(name = "headers", actual = ":python_headers")
+py_runtime(name = "guard", interpreter_path = interpreter, python_version = "PY3")
+py_runtime_pair(name = "pair", py3_runtime = ":guard")
+toolchain(name = "py_toolchain", toolchain = ":pair", toolchain_type = "@bazel_tools//tools/python:toolchain_type")

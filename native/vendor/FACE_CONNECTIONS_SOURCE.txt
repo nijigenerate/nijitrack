@@ -1,0 +1,5 @@
+Source: https://github.com/google-ai-edge/mediapipe/blob/v0.10.21/mediapipe/python/solutions/face_mesh_connections.py
+Copyright 2021 The MediaPipe Authors; Apache-2.0 (see header and sdk/LICENSE.mediapipe).
+Unmodified source SHA-256: cc7171e44d0612db38720cb2fd2516c395992cdd7457efe341543be6f3c22d87
+src/face_connections.hpp is generated from FACEMESH_TESSELATION, the contour tables and both iris tables.
+Regenerate with: python scripts/generate_face_connections.py

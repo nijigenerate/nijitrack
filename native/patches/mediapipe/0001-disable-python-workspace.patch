@@ -1,0 +1,83 @@
+diff --git a/WORKSPACE b/WORKSPACE
+index c353b11..a63e768 100644
+--- a/WORKSPACE
++++ b/WORKSPACE
+@@ -1,4 +1,7 @@
+ workspace(name = "mediapipe")
++local_repository(name = "python", path = "../no-python-repository")
++local_repository(name = "python_version_repo", path = "../no-python-repository")
++
+ 
+ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+ 
+@@ -270,38 +273,7 @@ load("@org_tensorflow//tensorflow:workspace3.bzl", "tf_workspace3")
+ 
+ tf_workspace3()
+ 
+-# Initialize hermetic Python
+-load("@org_tensorflow//third_party/xla/third_party/py:python_init_rules.bzl", "python_init_rules")
+-
+-python_init_rules()
+-
+-load("@org_tensorflow//third_party/xla/third_party/py:python_init_repositories.bzl", "python_init_repositories")
+-
+-python_init_repositories(
+-    default_python_version = "system",
+-    local_wheel_dist_folder = "dist",
+-    local_wheel_inclusion_list = ["mediapipe*"],
+-    local_wheel_workspaces = ["//:WORKSPACE"],
+-    requirements = {
+-        "3.9": "//:requirements_lock.txt",
+-        "3.10": "//:requirements_lock_3_10.txt",
+-        "3.11": "//:requirements_lock_3_11.txt",
+-        "3.12": "//:requirements_lock_3_12.txt",
+-    },
+-)
+-
+-load("@org_tensorflow//third_party/xla/third_party/py:python_init_toolchains.bzl", "python_init_toolchains")
+-
+-python_init_toolchains()
+-
+-load("@org_tensorflow//third_party/xla/third_party/py:python_init_pip.bzl", "python_init_pip")
+-
+-python_init_pip()
+-
+-load("@pypi//:requirements.bzl", "install_deps")
+-
+-install_deps()
+-# End hermetic Python initialization
++# Python interpreter/pip initialization deliberately removed for the C++-only target.
+ 
+ load("@org_tensorflow//tensorflow:workspace2.bzl", "tf_workspace2")
+ 
+@@ -311,29 +283,7 @@ load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
+ 
+ rules_pkg_dependencies()
+ 
+-load("@rules_python//python:repositories.bzl", "py_repositories")
+-
+-py_repositories()
+-
+-load("@rules_python//python:pip.bzl", "pip_parse")
+-
+-pip_parse(
+-    name = "mediapipe_pip_deps",
+-    requirements_lock = "@//:requirements_lock.txt",
+-)
+-
+-load("@mediapipe_pip_deps//:requirements.bzl", mp_install_deps = "install_deps")
+-
+-mp_install_deps()
+-
+-pip_parse(
+-    name = "model_maker_pip_deps",
+-    requirements_lock = "@//mediapipe/model_maker:requirements_lock.txt",
+-)
+-
+-load("@model_maker_pip_deps//:requirements.bzl", mm_install_deps = "install_deps")
+-
+-mm_install_deps()
++# No Python repositories or pip environments are initialized.
+ 
+ http_archive(
+     name = "rules_foreign_cc",

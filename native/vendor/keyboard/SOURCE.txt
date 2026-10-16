@@ -1,4 +1,0 @@
-Ubuntu noble package libxtst6 2:1.2.3-1.1build1 amd64
-Source: https://snapshot.ubuntu.com/ubuntu/20260828T000000Z
-Debian archive SHA256: 632d74c760f0a4e844c499e7bc1eca4c709aa096fde783a7a6807604aef77545
-Extracted libXtst.so.6.1.0 without modification, copied as libXtst.so.6.

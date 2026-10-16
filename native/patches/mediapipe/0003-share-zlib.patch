@@ -1,0 +1,56 @@
+diff --git a/third_party/zlib.BUILD b/third_party/zlib.BUILD
+index 1bd4478..5486fac 100644
+--- a/third_party/zlib.BUILD
++++ b/third_party/zlib.BUILD
+@@ -17,41 +17,7 @@ COPTS = select({
+     ],
+ })
+ 
+-cc_library(
+-    name = "zlib",
+-    srcs = [
+-        "adler32.c",
+-        "compress.c",
+-        "crc32.c",
+-        "crc32.h",
+-        "deflate.c",
+-        "deflate.h",
+-        "gzclose.c",
+-        "gzguts.h",
+-        "gzlib.c",
+-        "gzread.c",
+-        "gzwrite.c",
+-        "infback.c",
+-        "inffast.c",
+-        "inffast.h",
+-        "inffixed.h",
+-        "inflate.c",
+-        "inflate.h",
+-        "inftrees.c",
+-        "inftrees.h",
+-        "trees.c",
+-        "trees.h",
+-        "uncompr.c",
+-        "zutil.c",
+-        "zutil.h",
+-    ],
+-    hdrs = [
+-        "zconf.h",
+-        "zlib.h",
+-    ],
+-    copts = COPTS,
+-    includes = ["."],
+-)
++alias(name = "zlib", actual = "@@zlib~//:zlib")
+ 
+ cc_library(
+     name = "zlib_minizip",
+@@ -67,7 +33,7 @@ cc_library(
+         "//conditions:default": [],
+     }),
+     hdrs = [
+-        "contrib/minizip/crypt.h",
++        "zlib.h", "zconf.h", "contrib/minizip/crypt.h",
+         "contrib/minizip/ioapi.h",
+         "contrib/minizip/mztools.h",
+         "contrib/minizip/unzip.h",

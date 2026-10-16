@@ -1,6 +1,12 @@
 #include "keyboard.hpp"
 #include "platform.hpp"
 #include "tracking.hpp"
+#include "sdl_media.hpp"
+#include "sdl_preview.hpp"
+#include "cli_defaults.hpp"
+#include "options.hpp"
+#include "osc.hpp"
+#include "sdl_camera.hpp"
 #include <bit>
 #include <cctype>
 #include <cerrno>
@@ -74,7 +80,6 @@ public:
     MpFaceLandmarkerOptions o{};
     o.base_options.model_asset_path = model.c_str();
     o.base_options.file_descriptor = -1;
-    o.base_options.delegate = MP_DELEGATE_CPU;
 #ifdef _WIN32
     o.base_options.host_system = MP_HOST_SYSTEM_WINDOWS;
 #elif defined(__APPLE__)
@@ -112,172 +117,6 @@ public:
     auto status =
         MpFaceLandmarkerDetectForVideo(handle_, image, nullptr, timestamp, &out.value, &error);
     check(status, error, "detect video frame");
-  }
-};
-// FFmpeg receives arguments directly without a command shell.
-class VideoReader {
-  FILE *stream_ = nullptr;
-  std::unique_ptr<niji::platform::PipeProcess> process_;
-  std::string token() {
-    std::string s;
-    int c;
-    do {
-      c = fgetc(stream_);
-      if (c == '#')
-        while (c != '\n' && c != EOF)
-          c = fgetc(stream_);
-    } while (c != EOF && std::isspace(static_cast<unsigned char>(c)));
-    if (c == EOF)
-      return s;
-    do {
-      s += char(c);
-      c = fgetc(stream_);
-      if (s.size() > 32)
-        throw std::runtime_error("Invalid PPM header");
-    } while (c != EOF && !std::isspace(static_cast<unsigned char>(c)));
-    return s;
-  }
-
-public:
-  VideoReader(const std::string &input, bool camera, int width, int height, double fps) {
-    std::vector<std::string> args = {"ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error"};
-    if (camera) {
-#ifdef _WIN32
-      args.insert(args.end(), {"-f", "dshow", "-framerate", std::to_string(fps)});
-#elif defined(__APPLE__)
-      args.insert(args.end(), {"-f", "avfoundation", "-framerate", std::to_string(fps)});
-#else
-      args.insert(args.end(), {"-f", "v4l2", "-framerate", std::to_string(fps)});
-#endif
-    }
-    args.insert(args.end(),
-                {"-i", input, "-an", "-vf",
-                 "fps=" + std::to_string(fps) + ",scale=" + std::to_string(width) + ":" +
-                     std::to_string(height) + ":force_original_aspect_ratio=decrease",
-                 "-threads", "1", "-f", "image2pipe", "-vcodec", "ppm", "-"});
-    process_ = std::make_unique<niji::platform::PipeProcess>(std::move(args));
-    stream_ = process_->stream();
-  }
-  bool next(std::vector<uint8_t> &pixels, int &w, int &h) {
-    auto magic = token();
-    if (magic.empty()) {
-      process_->finish();
-      return false;
-    }
-    if (magic != "P6")
-      throw std::runtime_error("Expected P6 frames from ffmpeg");
-    w = std::stoi(token());
-    h = std::stoi(token());
-    if (token() != "255" || w < 1 || h < 1 || w > 8192 || h > 8192)
-      throw std::runtime_error("Invalid RGB frame dimensions");
-    pixels.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 3);
-    if (fread(pixels.data(), 1, pixels.size(), stream_) != pixels.size())
-      throw std::runtime_error("Truncated RGB frame");
-    return true;
-  }
-};
-class Osc {
-  niji::platform::Network network_;
-  niji::platform::Socket fd_ = niji::platform::invalid_socket;
-  std::vector<uint8_t> packet_;
-  void string(const std::string &s) {
-    packet_.insert(packet_.end(), s.begin(), s.end());
-    packet_.push_back(0);
-    while (packet_.size() % 4)
-      packet_.push_back(0);
-  }
-  void number(float f) {
-    uint32_t n = htonl(std::bit_cast<uint32_t>(f));
-    auto *p = reinterpret_cast<uint8_t *>(&n);
-    packet_.insert(packet_.end(), p, p + 4);
-  }
-
-public:
-  Osc(const std::string &host, int port) {
-    if (host.empty())
-      return;
-    addrinfo hints{};
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_family = AF_UNSPEC;
-    addrinfo *list = nullptr;
-    int error = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &list);
-    if (error)
-      throw std::runtime_error(std::string("OSC host: ") + gai_strerror(error));
-    for (auto *a = list; a; a = a->ai_next) {
-      fd_ = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-      if (fd_ != niji::platform::invalid_socket &&
-          connect(fd_, a->ai_addr, static_cast<int>(a->ai_addrlen)) == 0)
-        break;
-      if (fd_ != niji::platform::invalid_socket)
-        niji::platform::close_socket(fd_);
-      fd_ = niji::platform::invalid_socket;
-    }
-    freeaddrinfo(list);
-    if (fd_ == niji::platform::invalid_socket)
-      throw std::runtime_error("Cannot open OSC destination");
-  }
-  ~Osc() {
-    if (fd_ != niji::platform::invalid_socket)
-      niji::platform::close_socket(fd_);
-  }
-  void message(const std::string &address, const std::string &name,
-               const std::vector<float> &values) {
-    if (fd_ == niji::platform::invalid_socket)
-      return;
-    packet_.clear();
-    string(address);
-    std::string tags = ",";
-    if (!name.empty())
-      tags += 's';
-    tags += std::string(values.size(), 'f');
-    string(tags);
-    if (!name.empty())
-      string(name);
-    for (float v : values)
-      number(v);
-    auto n = niji::platform::send_packet(fd_, packet_);
-    if (n < 0 || static_cast<size_t>(n) != packet_.size())
-      throw std::runtime_error("OSC send failed");
-  }
-  void blend(const std::string &name, double v) {
-    message("/VMC/Ext/Blend/Val", name, {static_cast<float>(v)});
-  }
-  void key(const niji::keyboard::Event &event) {
-    if (fd_ == niji::platform::invalid_socket)
-      return;
-    packet_.clear();
-    string("/VMC/Ext/Key");
-    string(",isi");
-    auto word = [&](uint32_t value) {
-      value = htonl(value);
-      const auto *p = reinterpret_cast<const uint8_t *>(&value);
-      packet_.insert(packet_.end(), p, p + 4);
-    };
-    word(event.pressed ? 1U : 0U);
-    string(event.text);
-    word(event.codepoint);
-    auto sent = niji::platform::send_packet(fd_, packet_);
-    if (sent < 0 || static_cast<size_t>(sent) != packet_.size())
-      throw std::runtime_error("OSC key send failed");
-  }
-  void send_frame(const MpFaceLandmarkerResult &r, const niji::Pose &p) {
-    std::vector<float> head;
-    for (auto v : p.nose)
-      head.push_back(static_cast<float>(v));
-    for (auto v : p.quaternion)
-      head.push_back(static_cast<float>(v));
-    message("/VMC/Ext/Bone/Pos", "Head", head);
-    blend("GazeRightX", p.gaze_right[0]);
-    blend("GazeRightY", p.gaze_right[1]);
-    blend("GazeLeftX", p.gaze_left[0]);
-    blend("GazeLeftY", p.gaze_left[1]);
-    if (r.face_blendshapes_count)
-      for (uint32_t i = 0; i < r.face_blendshapes[0].categories_count; i++) {
-        const auto &b = r.face_blendshapes[0].categories[i];
-        if (b.category_name)
-          blend(b.category_name, b.score);
-      }
-    message("/VMC/Ext/Blend/Apply", "", {});
   }
 };
 static void overlay(const std::string &path, MpImagePtr image, const MpFaceLandmarkerResult &r,
@@ -375,237 +214,210 @@ static void output(std::ostream &o, const MpFaceLandmarkerResult &r, const niji:
   if (!o)
     throw std::runtime_error("JSON output failed");
 }
-static int integer(const std::string &s) {
-  size_t n;
-  int v = std::stoi(s, &n);
-  if (n != s.size())
-    throw std::runtime_error("Invalid integer: " + s);
-  return v;
-}
-struct Options {
-  std::string model = "../face_landmarker_v2_with_blendshapes.task", image, video, device, osc_host,
-              output_path, overlay_path;
-  int width = 640, height = 480, frames = 0, repeat = 1, port = 39540;
-  double fps = 30;
-  bool flip = false, list = false, keyboard = false;
-};
-static Options parse(int argc, char **argv) {
-  Options o;
-  for (int i = 1; i < argc; i++) {
-    std::string a = argv[i];
-    auto value = [&]() {
-      if (++i >= argc)
-        throw std::runtime_error("Missing value for " + a);
-      return std::string(argv[i]);
-    };
-    if (a == "--help") {
-      std::cout << "nijitrack-cpp --image FILE | --video FILE | --device N_OR_PATH\n"
-                   "  --model FILE       default: ../face_landmarker_v2_with_blendshapes.task\n  "
-                   "--output FILE     "
-                   " JSONL (default stdout)\n"
-                   "  --overlay FILE     first frame + landmarks as PPM\n  --flip             "
-                   "mirror overlay only; tracking stays unchanged\n"
-                   "  --repeat N         repeat still image in VIDEO mode\n  --frames N         "
-                   "stop after N video/camera frames\n"
-                   "  --width N --height N --fps N    ffmpeg output settings (640x480, 30fps)\n"
-                   "  --osc-host HOST --osc-port N    opt-in OSC/VMC output (39540)\n  "
-                   "--list-devices     JSON camera list\n"
-                   "  --keyboard         capture global character keys, requires --osc-host\n";
-      std::exit(0);
-    } else if (a == "--image")
-      o.image = value();
-    else if (a == "--video")
-      o.video = value();
-    else if (a == "--device")
-      o.device = value();
-    else if (a == "--model")
-      o.model = value();
-    else if (a == "--output")
-      o.output_path = value();
-    else if (a == "--overlay")
-      o.overlay_path = value();
-    else if (a == "--osc-host")
-      o.osc_host = value();
-    else if (a == "--osc-port")
-      o.port = integer(value());
-    else if (a == "--width")
-      o.width = integer(value());
-    else if (a == "--height")
-      o.height = integer(value());
-    else if (a == "--frames")
-      o.frames = integer(value());
-    else if (a == "--repeat")
-      o.repeat = integer(value());
-    else if (a == "--fps") {
-      auto s = value();
-      size_t n;
-      o.fps = std::stod(s, &n);
-      if (n != s.size())
-        throw std::runtime_error("Invalid fps");
-    } else if (a == "--flip")
-      o.flip = true;
-    else if (a == "--list-devices")
-      o.list = true;
-    else if (a == "--keyboard")
-      o.keyboard = true;
-    else
-      throw std::runtime_error("Unknown option: " + a);
-  }
-  if (o.list)
-    return o;
-  if (o.keyboard && o.osc_host.empty())
-    throw std::runtime_error("--keyboard requires an explicit --osc-host destination");
-  if ((!o.image.empty()) + (!o.video.empty()) + (!o.device.empty()) != 1)
-    throw std::runtime_error("Select exactly one of --image, --video, --device");
-  if (o.width < 1 || o.width > 8192 || o.height < 1 || o.height > 8192 || !std::isfinite(o.fps) ||
-      o.fps <= 0 || o.fps > 240 || o.frames < 0 || o.repeat < 1 || o.port < 1 || o.port > 65535)
-    throw std::runtime_error("Invalid numeric option");
-  for (auto &input : {o.model, o.image, o.video})
-    if (!input.empty() && !fs::is_regular_file(input))
-      throw std::runtime_error("Input file does not exist: " + input);
-  for (const auto &destination : {o.output_path, o.overlay_path}) {
-    if (destination.empty())
-      continue;
-    for (const auto &input : {o.model, o.image, o.video}) {
-      if (!input.empty() && fs::weakly_canonical(destination) == fs::weakly_canonical(input))
-        throw std::runtime_error("Output must not overwrite input: " + destination);
-    }
-  }
-  if (!o.output_path.empty() && !o.overlay_path.empty() &&
-      fs::weakly_canonical(o.output_path) == fs::weakly_canonical(o.overlay_path))
-    throw std::runtime_error("JSON and overlay need different output paths");
-  return o;
-}
 static void devices() {
-#if defined(_WIN32) || defined(__APPLE__)
-  throw std::runtime_error("--list-devices is currently implemented on Linux only; use FFmpeg "
-                           "device enumeration on this OS");
-#else
   bool comma = false;
   std::cout << '[';
-  std::vector<fs::path> entries;
-  if (fs::exists("/sys/class/video4linux"))
-    for (const auto &e : fs::directory_iterator("/sys/class/video4linux"))
-      entries.push_back(e.path());
-  std::sort(entries.begin(), entries.end());
-  for (const auto &e : entries) {
-    std::string name;
-    std::ifstream f(e / "name");
-    std::getline(f, name);
+  for (const auto &camera : niji::cameras()) {
     if (comma)
       std::cout << ',';
-    std::cout << "{\"id\":" << quote(e.filename().string()) << ",\"name\":" << quote(name)
-              << ",\"path\":" << quote("/dev/" + e.filename().string()) << '}';
+    std::cout << "{\"id\":" << camera.id << ",\"name\":" << quote(camera.name);
+    if (!camera.path.empty()) std::cout << ",\"path\":" << quote(camera.path);
+    if (!camera.uuid.empty()) std::cout << ",\"uuid\":" << quote(camera.uuid);
+    std::cout << '}';
     comma = true;
   }
   std::cout << "]\n";
-#endif
 }
 int main(int argc, char **argv) {
   try {
     auto o = parse(argc, argv);
-    if (o.list) {
-      devices();
-      return 0;
-    }
-    std::ofstream file;
-    if (!o.output_path.empty()) {
-      file.open(o.output_path);
-      if (!file)
-        throw std::runtime_error("Cannot open JSON output");
-    }
-    std::ostream &out = o.output_path.empty() ? std::cout : file;
-    Landmarker landmarker(o.model);
-    Osc osc(o.osc_host, o.port);
+    niji::SdlRuntime sdl(o.list || !o.device.empty(),o.show);
+    if (o.list) { devices(); return 0; }
+    // SDL rendering/events and global keyboard pumps stay on the main thread.
+    std::unique_ptr<niji::Preview> preview;
+    if (o.show) preview = std::make_unique<niji::Preview>(o.display);
+    niji::SharedDisplayOptions display_settings(o.display);
     std::unique_ptr<niji::keyboard::Capture> keyboard;
+    std::unique_ptr<Osc> key_osc;
     if (o.keyboard) {
+      key_osc = std::make_unique<Osc>(o.osc_host, o.port);
       keyboard = std::make_unique<niji::keyboard::Capture>();
       std::cerr << "keyboard=" << keyboard->backend_name() << std::endl;
     }
-    auto send_keys = [&]() {
-      if (keyboard)
-        for (const auto &event : keyboard->poll())
-          osc.key(event);
-    };
-    niji::PoseTracker tracker;
-    int processed = 0, detected = 0;
-    double total = 0;
-    auto start = Clock::now();
-    int64_t last_ts = -1;
-    auto process = [&](MpImagePtr image, int64_t timestamp) {
-      send_keys();
-      timestamp = std::max(timestamp, last_ts + 1);
-      last_ts = timestamp;
-      Result result;
-      auto before = Clock::now();
-      landmarker.detect(image, timestamp, result);
-      double ms = std::chrono::duration<double, std::milli>(Clock::now() - before).count();
-      total += ms;
-      niji::Pose pose;
-      const niji::Pose *pp = nullptr;
-      if (result.value.face_landmarks_count) {
-        pose = tracker.calculate(result.value.face_landmarks[0]);
-        pp = &pose;
-        detected++;
-        osc.send_frame(result.value, pose);
-      } else
-        tracker.reset();
-      output(out, result.value, pp, processed, timestamp, ms);
-      if (processed == 0 && !o.overlay_path.empty())
-        overlay(o.overlay_path, image, result.value, o.flip);
-      processed++;
-      send_keys();
-    };
-    if (!o.image.empty()) {
-      Image image;
-      char *error = nullptr;
-      auto status = MpImageCreateFromFile(o.image.c_str(), &image.handle, &error);
-      check(status, error, "load image");
-      for (int i = 0; i < o.repeat; i++)
-        process(image.handle, static_cast<int64_t>(std::llround(i * 1000.0 / o.fps)));
-    } else {
-      std::string input = o.device.empty() ? o.video : o.device;
-      if (!o.device.empty()) {
-#ifdef _WIN32
-        if (input.find_first_not_of("0123456789") == std::string::npos)
-          throw std::runtime_error(
-              "Windows --device requires a DirectShow camera name, not an index");
-        input = "video=" + input;
-#elif defined(__APPLE__)
-        input += ":none";
-#else
-        if (input.find_first_not_of("0123456789") == std::string::npos)
-          input = "/dev/video" + input;
-#endif
+    niji::WorkerStream<niji::PreviewFrame> inference(niji::Delivery::latest,
+        [o, &display_settings](auto &stream) {
+      // The landmarker, pose tracker, JSON stream and frame OSC sender have one owner.
+      std::ofstream file;
+      if (!o.output_path.empty()) {
+        file.open(o.output_path);
+        if (!file) throw std::runtime_error("Cannot open JSON output");
       }
-      VideoReader reader(input, !o.device.empty(), o.width, o.height, o.fps);
-      std::vector<uint8_t> rgb;
-      int w = 0, h = 0;
-      while ((o.frames == 0 || processed < o.frames) && reader.next(rgb, w, h)) {
-        if (rgb.size() > INT_MAX)
-          throw std::runtime_error("Frame too large");
+      std::ostream &out = o.output_path.empty() ? std::cout : file;
+      Landmarker landmarker(o.model);
+      Osc osc(o.osc_host, o.port);
+      niji::PoseTracker tracker;
+      int processed = 0, detected = 0;
+      double total = 0, frame_age_total = 0;
+      std::uint64_t captured = 0, dropped = 0;
+      const auto start = Clock::now();
+      int64_t last_ts = -1;
+      niji::TimingSamples inference_ms, output_intervals;
+      std::optional<Clock::time_point> previous_output;
+      auto process = [&](MpImagePtr original, int64_t timestamp) {
+        if (stream.stopped()) return;
+        Image mirrored;
+        MpImagePtr image = original;
+        std::vector<uint8_t> flipped;
+        if (o.flip) {
+          const uint8_t *data = nullptr;
+          char *error = nullptr;
+          auto status = MpImageDataUint8(original, &data, &error);
+          check(status, error, "read image to flip");
+          int w = MpImageGetWidth(original), h = MpImageGetHeight(original);
+          int channels = MpImageGetChannels(original);
+          flipped = niji::mirror_rgb(data, w, h, channels);
+          status = MpImageCreateFromUint8Data(channels == 4 ? kMpImageFormatSrgba : kMpImageFormatSrgb,
+              w, h, flipped.data(), static_cast<int>(flipped.size()), &mirrored.handle, &error);
+          check(status, error, "create flipped image");
+          image = mirrored.handle;
+        }
+        timestamp = std::max(timestamp, last_ts + 1);
+        last_ts = timestamp;
+        Result result;
+        const auto before = Clock::now();
+        landmarker.detect(image, timestamp, result);
+        const double ms = std::chrono::duration<double, std::milli>(Clock::now() - before).count();
+        total += ms;
+        inference_ms.add(ms);
+        niji::Pose pose;
+        const niji::Pose *pp = nullptr;
+        if (result.value.face_landmarks_count) {
+          pose = tracker.calculate(result.value.face_landmarks[0]);
+          pp = &pose;
+          ++detected;
+          osc.send_frame(result.value, pose);
+        } else tracker.reset();
+        const auto output_time = Clock::now();
+        if (previous_output)
+          output_intervals.add(std::chrono::duration<double, std::milli>(output_time-*previous_output).count());
+        previous_output = output_time;
+        if (o.device.empty() || o.json || !o.output_path.empty())
+          output(out, result.value, pp, processed, timestamp, ms);
+        if (processed == 0 && !o.overlay_path.empty())
+          overlay(o.overlay_path, image, result.value, false);
+        if (o.show && !stream.stopped()) {
+          const uint8_t *pixels = nullptr;
+          char *error = nullptr;
+          auto status = MpImageDataUint8(image, &pixels, &error);
+          check(status, error, "read preview pixels");
+          if (MpImageGetChannels(image) != 3) throw std::runtime_error("Preview requires RGB input");
+          // Copy all pixels/geometry before releasing the inference result.
+          auto rendered = niji::render_preview(pixels, MpImageGetWidth(image), MpImageGetHeight(image),
+                                               result.value, pp, display_settings.get());
+          stream.publish(std::move(rendered));
+        }
+        ++processed;
+      };
+      if (!stream.stopped() && !o.image.empty()) {
         Image image;
         char *error = nullptr;
-        auto status =
-            MpImageCreateFromUint8Data(kMpImageFormatSrgb, w, h, rgb.data(),
-                                       static_cast<int>(rgb.size()), &image.handle, &error);
-        check(status, error, "create RGB image");
-        int64_t ts =
-            o.device.empty()
-                ? static_cast<int64_t>(std::llround(processed * 1000.0 / o.fps))
-                : std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start)
-                      .count();
-        process(image.handle, ts);
+        auto status = MpImageCreateFromFile(o.image.c_str(), &image.handle, &error);
+        check(status, error, "load image");
+        for (int i = 0; i < o.repeat && !stream.stopped(); ++i)
+          process(image.handle, static_cast<int64_t>(std::llround(i*1000.0/o.fps)));
+      } else if (!stream.stopped()) {
+        niji::AsyncCameraReader reader(o.device, o.width, o.height, o.fps);
+        niji::CameraFrame frame;
+        auto report_start = Clock::now();
+        int report_processed = 0, report_detected = 0;
+        std::uint64_t report_captured = 0, report_dropped = 0;
+        niji::TimingSamples queue_ms, age_ms;
+        auto report = [&] {
+          const auto now = Clock::now();
+          const double seconds = std::chrono::duration<double>(now-report_start).count();
+          if (seconds < 5) return;
+          const auto capture = reader.take_timing();
+          const auto current_captured = reader.captured(), current_dropped = reader.dropped();
+          auto samples = [](std::ostream &s, const char *name, const niji::TimingSamples &values) {
+            s << ' ' << name << "_mean_ms=" << values.mean()
+              << ' ' << name << "_stddev_ms=" << values.deviation()
+              << ' ' << name << "_max_ms=" << values.maximum;
+          };
+          std::ostringstream message;
+          message << std::fixed << std::setprecision(2)
+                  << "performance window_s=" << seconds
+                  << " capture_fps=" << static_cast<double>(current_captured-report_captured)/seconds
+                  << " processed_fps=" << (processed-report_processed)/seconds
+                  << " face_fps=" << (detected-report_detected)/seconds
+                  << " dropped=" << current_dropped-report_dropped;
+          samples(message, "capture_interval", capture.intervals);
+          samples(message, "read", capture.reads);
+          samples(message, "inference", inference_ms);
+          samples(message, "queue", queue_ms);
+          samples(message, "frame_age", age_ms);
+          samples(message, "output_interval", output_intervals);
+          message << '\n';
+          std::cerr << message.str() << std::flush;
+          report_start = now; report_processed = processed; report_detected = detected;
+          report_captured = current_captured; report_dropped = current_dropped;
+          inference_ms = {}; queue_ms = {}; age_ms = {}; output_intervals = {};
+        };
+        while (!stream.stopped() && (o.frames == 0 || processed < o.frames)) {
+          const auto status = reader.next(frame, std::chrono::milliseconds(5));
+          if (status == niji::ReadStatus::timeout) { report(); continue; }
+          if (status == niji::ReadStatus::end) break;
+          queue_ms.add(std::chrono::duration<double, std::milli>(Clock::now()-frame.captured_at).count());
+          if (frame.rgb.size() > INT_MAX) throw std::runtime_error("Frame too large");
+          Image image;
+          char *error = nullptr;
+          auto image_status = MpImageCreateFromUint8Data(kMpImageFormatSrgb, frame.width, frame.height,
+              frame.rgb.data(), static_cast<int>(frame.rgb.size()), &image.handle, &error);
+          check(image_status, error, "create RGB image");
+          const int64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(frame.captured_at-start).count();
+          process(image.handle, timestamp);
+          const double age = std::chrono::duration<double, std::milli>(Clock::now()-frame.captured_at).count();
+          frame_age_total += age;
+          age_ms.add(age);
+          report();
+        }
+        reader.request_stop();
+        reader.join();
+        captured = reader.captured(); dropped = reader.dropped();
       }
+      landmarker.close();
+      if (!processed) {
+        if (stream.stopped()) return;
+        throw std::runtime_error("No frames decoded");
+      }
+      const double elapsed = std::chrono::duration<double>(Clock::now()-start).count();
+      std::cerr << "frames=" << processed << " faces=" << detected
+                << " mean_inference_ms=" << total/processed
+                << " processed_fps=" << processed/std::max(elapsed, 1e-9);
+      if (o.image.empty())
+        std::cerr << " captured=" << captured << " dropped=" << dropped
+                  << " mean_frame_age_ms=" << frame_age_total/processed;
+      std::cerr << '\n';
+    });
+    while (true) {
+      if (keyboard)
+        for (const auto &event : keyboard->poll()) key_osc->key(event);
+      if (preview) {
+        if (!preview->pump()) { inference.request_stop(); break; }
+        display_settings.set(preview->options);
+      }
+      if (!preview) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) if (event.type==SDL_EVENT_QUIT) inference.request_stop();
+      }
+      niji::PreviewFrame rendered;
+      const auto status = inference.next(rendered, std::chrono::milliseconds(5));
+      if (status == niji::ReadStatus::end) break;
+      if (status == niji::ReadStatus::value && preview) preview->present(rendered);
     }
-    landmarker.close();
-    if (!processed)
-      throw std::runtime_error("No frames decoded");
-    std::cerr << "frames=" << processed << " faces=" << detected
-              << " mean_inference_ms=" << total / processed << "\n";
+    inference.join();
     return 0;
-  } catch (const std::exception &e) {
-    std::cerr << "nijitrack-cpp: " << e.what() << '\n';
+  } catch (const std::exception &error) {
+    std::cerr << "nijitrack-cpp: " << error.what() << '\n';
     return 1;
   }
 }

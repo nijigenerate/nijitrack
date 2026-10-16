@@ -1,0 +1,13 @@
+diff --git a/src/google/protobuf/io/BUILD.bazel b/src/google/protobuf/io/BUILD.bazel
+index 9811abc..132122a 100644
+--- a/src/google/protobuf/io/BUILD.bazel
++++ b/src/google/protobuf/io/BUILD.bazel
+@@ -161,7 +161,7 @@ cc_library(
+         "@abseil-cpp//absl/log:absl_check",
+         "@abseil-cpp//absl/log:absl_log",
+     ] + select({
+-        "//build_defs:config_msvc": [],
++        "//build_defs:config_msvc": ["@zlib"],
+         "//conditions:default": ["@zlib"],
+     }),
+ )

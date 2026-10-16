@@ -1,0 +1,24 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+index b63d1ae..de07caf 100644
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -648,8 +648,8 @@ genrule(
+         ":build_identifier_ukernel_srcs",
+     ],
+     outs = ["src/build_identifier.c"],
+-    cmd = "$(location generate_build_identifier_py) --output $@ --input_file_list $(location :build_identifier_ukernel_srcs_list)",
+-    tools = [":generate_build_identifier_py"],
++    cmd = "cmake -DOUTPUT=$@ -DINPUT_FILE_LIST=$(location :build_identifier_ukernel_srcs_list) -DCONCAT_TOOL=$(location :nijitrack_concat_sources) -P $(location generate_build_identifier.cmake)",
++    tools = [":nijitrack_concat_sources", "generate_build_identifier.cmake"],
+ )
+ 
+ xnnpack_cc_library(
+@@ -1835,3 +1835,8 @@ bzl_library(
+     srcs = ["build_params.bzl"],
+     visibility = ["//visibility:private"],
+ )
++
++cc_binary(
++    name = "nijitrack_concat_sources",
++    srcs = ["nijitrack_concat_sources.cpp"],
++)
