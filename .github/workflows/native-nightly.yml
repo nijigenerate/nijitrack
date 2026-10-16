@@ -1,0 +1,26 @@
+name: Native nightly
+
+on:
+  schedule:
+    # 03:17 JST daily (GitHub schedules can be delayed).
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: native-nightly-scheduler
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/native-build.yml
+    with:
+      source_ref: ${{ github.sha }}
+      publish: true

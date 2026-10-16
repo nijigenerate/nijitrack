@@ -95,6 +95,8 @@ Halideのテストは任意角度のROIと境界処理・正規化を確認し�
 `.github/workflows/native-build.yml`も同じソースビルド手順を使用します。Linux/macOSの実機検証は未実施で、CI結果と区別してください。
 CIはツール・取得済みソースと静的SDKを別々にキャッシュします。OS/CPU、ランナーのコンパイラ・システムSDK、固定依存情報、SDKのパッチ・ビルド手順が一致する場合はSDKの再ビルドを省略します。本体のビルド、CTest、顔・手の推論、配布物の起動・依存監査は毎回実行します。
 キャッシュは各工程の成功直後に保存するため、その後の本体テストが失敗してもSDKを再利用できます。初回や依存・ツールチェーン変更時にはフルビルドが必要です。
+`native-nightly.yml`は毎日03:17 JSTにmainをビルドし、3 OSの検証成功後に`native-nightly`プレリリースを更新します。手動実行もmainに限定します。
+mainへの移行時は、`NATIVE_CACHE_SEED_RUN_ID`に指定した成功済みnative-experimental実行の成果物から既存のツール・SDKキャッシュを転送します。キーとSHA256が一致するものを復元して実行先refのキャッシュへ保存するため、同じSDKの再ビルドは不要です。転送用成果物の保持は7日で、実行時には元ブランチと成功状態も確認します。
 配布時には`share/nijitrack-cpp`のライセンス・出典を含めます。モデル、画像、キャプチャ結果は配布しません。
 動画デコード機能、FFmpegの取得・リンク・同梱はありません。`--show-video`はSDL3のカメラ映像表示を切り替えます。
 固定取得情報は`toolchain.lock.json`と`toolchain.unix.lock.json`、MediaPipeの依存物は固定ソース内のWORKSPACEに記録されています。

@@ -6,14 +6,23 @@ on:
     paths:
       - 'native/**'
       - '.github/workflows/native-build.yml'
+      - '.github/workflows/native-nightly.yml'
+      - '.github/scripts/native-cache-transfer.cmake'
   pull_request:
+    branches: [main]
     paths:
       - 'native/**'
       - '.github/workflows/native-build.yml'
+      - '.github/workflows/native-nightly.yml'
+      - '.github/scripts/native-cache-transfer.cmake'
   workflow_dispatch:
     inputs:
       publish:
         description: Update the native-nightly prerelease after all builds pass
+        type: boolean
+        default: false
+      export_cache:
+        description: Export existing native-experimental caches for main migration
         type: boolean
         default: false
   workflow_call:
@@ -29,6 +38,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: native-build-${{ github.ref }}
@@ -42,7 +52,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.source_ref || github.sha }}
+          ref: ${{ inputs.publish && 'refs/heads/main' || inputs.source_ref || github.sha }}
           persist-credentials: false
       - id: source
         shell: bash
@@ -96,6 +106,14 @@ jobs:
           fi
           fingerprint=$(cmake -E sha256sum native/results/build-environment/ci-toolchain.txt)
           echo "fingerprint=${fingerprint%% *}" >> "$GITHUB_OUTPUT"
+      - name: Compute cache keys
+        id: cache-keys
+        env:
+          TOOLS_KEY: native-tools-v1-${{ matrix.platform }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('native/toolchain*.lock.json', 'native/scripts/setup_tracking*', 'native/scripts/setup_native_toolchain.ps1') }}
+          SDK_KEY: native-sdk-v1-${{ matrix.platform }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('native/toolchain*.lock.json', 'native/assets.lock.json', 'native/patches/**', 'native/toolchain/**', 'native/scripts/*.sh', 'native/scripts/*.ps1', 'native/build.sh') }}
+        run: |
+          echo "tools=$TOOLS_KEY" >> "$GITHUB_OUTPUT"
+          echo "sdk=$SDK_KEY" >> "$GITHUB_OUTPUT"
       - name: Restore verified tools and downloads
         id: tools-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -105,14 +123,49 @@ jobs:
             native/vendor/downloads
             native/vendor/sources
             native/build-sdl3
-          key: native-tools-v1-${{ matrix.platform }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('native/toolchain*.lock.json', 'native/scripts/setup_tracking*', 'native/scripts/setup_native_toolchain.ps1') }}
+          key: ${{ steps.cache-keys.outputs.tools }}
       - name: Restore static tracking SDK
         id: sdk-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: native/vendor/sdk-halide
           # Exact keys only: never fall back to an SDK built from another recipe.
-          key: native-sdk-v1-${{ matrix.platform }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('native/toolchain*.lock.json', 'native/assets.lock.json', 'native/patches/**', 'native/toolchain/**', 'native/scripts/*.sh', 'native/scripts/*.ps1', 'native/build.sh') }}
+          key: ${{ steps.cache-keys.outputs.sdk }}
+      - name: Validate native-experimental cache transfer source
+        id: cache-seed
+        if: vars.NATIVE_CACHE_SEED_RUN_ID != '' && (steps.tools-cache.outputs.cache-hit != 'true' || steps.sdk-cache.outputs.cache-hit != 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEED_RUN: ${{ vars.NATIVE_CACHE_SEED_RUN_ID }}
+          SEED_ARTIFACT: native-cache-seed-${{ matrix.platform }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SEED_RUN" --jq 'select(.head_branch == "native-experimental" and .conclusion == "success" and .path == ".github/workflows/native-build.yml") | .id' > "$RUNNER_TEMP/cache-seed-run.txt"
+          test "$(cat "$RUNNER_TEMP/cache-seed-run.txt")" = "$SEED_RUN"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SEED_RUN/artifacts" --jq '.artifacts[] | select(.expired == false) | .name' > "$RUNNER_TEMP/cache-seed-artifacts.txt"
+          available=false
+          while IFS= read -r name; do
+            if [[ "$name" == "$SEED_ARTIFACT" ]]; then available=true; fi
+          done < "$RUNNER_TEMP/cache-seed-artifacts.txt"
+          echo "available=$available" >> "$GITHUB_OUTPUT"
+      - name: Download existing branch caches
+        id: cache-download
+        if: steps.cache-seed.outputs.available == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: native-cache-seed-${{ matrix.platform }}
+          path: ${{ runner.temp }}/native-cache-seed
+          github-token: ${{ github.token }}
+          run-id: ${{ vars.NATIVE_CACHE_SEED_RUN_ID }}
+      - name: Import existing caches without rebuilding
+        id: cache-import
+        if: steps.cache-download.conclusion == 'success'
+        env:
+          NATIVE_CACHE_SEED_DIR: ${{ runner.temp }}/native-cache-seed
+          NATIVE_TOOLS_KEY: ${{ steps.cache-keys.outputs.tools }}
+          NATIVE_SDK_KEY: ${{ steps.cache-keys.outputs.sdk }}
+          NATIVE_TOOLS_HIT: ${{ steps.tools-cache.outputs.cache-hit }}
+          NATIVE_SDK_HIT: ${{ steps.sdk-cache.outputs.cache-hit }}
+        run: cmake -DMODE=import -P .github/scripts/native-cache-transfer.cmake
       - name: Verify checked-in native headers and data
         run: cmake -P native/scripts/setup_native.cmake
       - name: Check shell script syntax
@@ -145,17 +198,17 @@ jobs:
         run: '& native/scripts/prepare_mediapipe_halide.ps1'
       - name: Build Linux and macOS static SDK
         id: sdk-unix
-        if: runner.os != 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true'
+        if: runner.os != 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true' && steps.cache-import.outputs.sdk != 'true'
         run: bash native/build.sh sdk
       - name: Build Windows static SDK
         id: sdk-windows
-        if: runner.os == 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true'
+        if: runner.os == 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true' && steps.cache-import.outputs.sdk != 'true'
         shell: pwsh
         run: |
           & native/scripts/build_mediapipe_halide.ps1
           & native/tests/patch_management.ps1 -Dependencies
       - name: Save completed static tracking SDK
-        if: steps.sdk-cache.outputs.cache-hit != 'true' && (steps.sdk-unix.conclusion == 'success' || steps.sdk-windows.conclusion == 'success')
+        if: steps.sdk-cache.outputs.cache-hit != 'true' && (steps.sdk-unix.conclusion == 'success' || steps.sdk-windows.conclusion == 'success' || steps.cache-import.outputs.sdk == 'true')
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: native/vendor/sdk-halide
@@ -180,6 +233,23 @@ jobs:
             native/install/bin/nijitrack -h
             native/install/bin/nijitrack-cpp --help
           fi
+      - name: Export existing caches for main migration
+        id: cache-export
+        if: github.ref == 'refs/heads/native-experimental' && (inputs.export_cache || vars.NATIVE_CACHE_SEED_RUN_ID == '')
+        env:
+          NATIVE_CACHE_SEED_DIR: ${{ runner.temp }}/native-cache-seed
+          NATIVE_TOOLS_KEY: ${{ steps.cache-keys.outputs.tools }}
+          NATIVE_SDK_KEY: ${{ steps.cache-keys.outputs.sdk }}
+        run: cmake -DMODE=export -P .github/scripts/native-cache-transfer.cmake
+      - name: Upload caches for cross-branch reuse
+        if: steps.cache-export.conclusion == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-cache-seed-${{ matrix.platform }}
+          path: ${{ runner.temp }}/native-cache-seed/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
       - name: Archive package preserving Unix executable permissions
         env:
           NATIVE_PLATFORM: ${{ matrix.platform }}
@@ -216,13 +286,15 @@ jobs:
             echo '### Native build cache'
             echo 'Tools cache hit: ${{ steps.tools-cache.outputs.cache-hit }}'
             echo 'Static SDK cache hit: ${{ steps.sdk-cache.outputs.cache-hit }}'
+            echo 'Transferred tools: ${{ steps.cache-import.outputs.tools }}'
+            echo 'Transferred SDK: ${{ steps.cache-import.outputs.sdk }}'
             echo 'Tracker build, tests, inference and dependency audits run on every build.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     name: Update native nightly prerelease
     needs: [source, build]
-    if: inputs.publish && github.event_name != 'pull_request'
+    if: inputs.publish && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -255,7 +327,7 @@ jobs:
           cat > notes.md <<EOF_NOTES
           Experimental C++ nijitrack nightly / 仮リリース
 
-          Source: ${SOURCE_SHA} (native-experimental)
+          Source: ${SOURCE_SHA} (main)
           Build: https://github.com/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}
 
           - Windows x86-64 / macOS arm64 / Linux x86-64
