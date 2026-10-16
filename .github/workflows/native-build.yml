@@ -2,7 +2,7 @@ name: Native build
 
 on:
   push:
-    branches: [main, native-experimental]
+    branches: [main]
     paths:
       - 'native/**'
       - '.github/workflows/native-build.yml'
