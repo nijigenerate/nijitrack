@@ -1,5 +1,6 @@
-# SHA256 URL filename (build tools are not included in the application)
+# SHA256 URL filename
 ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0 https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage appimagetool
 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 runtime-x86_64
 4c4f6df4647c9f01f871d7edd3716d8aeeffda9d22ffbebe3fccd95a6ab52c95 https://codeload.github.com/AppImage/type2-runtime/tar.gz/refs/tags/20251108 runtime-source.tar.gz
 70589cfd5e1cff7ccd6ac91c86c01be340b227285c5e200baa284e401eea2ca0 https://github.com/libfuse/libfuse/releases/download/fuse-3.15.0/fuse-3.15.0.tar.xz fuse-3.15.0.tar.xz
+db0238c5981dabbd80ee09ae15387f390091668ca060a7bc38047912491443d3 https://github.com/vasi/squashfuse/archive/0.5.2.tar.gz squashfuse-0.5.2.tar.gz
