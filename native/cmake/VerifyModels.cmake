@@ -1,0 +1,8 @@
+file(READ "${CMAKE_CURRENT_LIST_DIR}/../vendor/models/models.lock.json" model_lock)
+foreach(name face_landmarker.task hand_landmarker.task)
+  string(JSON expected GET "${model_lock}" "${name}" sha256)
+  file(SHA256 "${CMAKE_CURRENT_LIST_DIR}/../vendor/models/${name}" actual)
+  if(NOT actual STREQUAL expected)
+    message(FATAL_ERROR "Bundled model checksum mismatch: ${name}")
+  endif()
+endforeach()

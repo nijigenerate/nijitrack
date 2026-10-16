@@ -1,4 +1,2 @@
-face_landmarker.task 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
-hand_landmarker.task fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1 https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
 portrait.jpg a6f11efaa834706db23f275b6115058fa87fc7f14362681e6abe14e82749de3e https://storage.googleapis.com/mediapipe-assets/portrait.jpg
 right_hands.jpg 4b5134daa4cb60465535239535f9f74c2842aba3aa5fd30bf04ef5678f93d87f https://storage.googleapis.com/mediapipe-assets/right_hands.jpg

@@ -8,7 +8,7 @@ if(CMAKE_HOST_WIN32)
 else()
   set(executable "${base}/bin/nijitrack")
 endif()
-set(default_model "${base}/face_landmarker_v2_with_blendshapes.task")
+set(default_model "${base}/share/nijitrack/models/face_landmarker.task")
 # Exercise the missing-model fallback before installing the fixture model.
 file(REMOVE "${default_model}")
 execute_process(COMMAND "${executable}" -h WORKING_DIRECTORY "${base}/bin"
@@ -16,7 +16,7 @@ execute_process(COMMAND "${executable}" -h WORKING_DIRECTORY "${base}/bin"
 if(NOT help MATCHES "nijitrack --image")
   message(FATAL_ERROR "Unicode executable path failed")
 endif()
-file(COPY_FILE "${root}/native/results/ci-fixtures/face_landmarker.task" "${default_model}")
+file(COPY_FILE "${root}/native/vendor/models/face_landmarker.task" "${default_model}")
 file(COPY_FILE "${root}/native/results/ci-fixtures/portrait.jpg" "${base}/入力_顔.jpg")
 file(COPY_FILE "${default_model}" "${base}/モデル_顔🧪.task")
 foreach(mode default explicit)

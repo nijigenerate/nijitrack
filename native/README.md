@@ -24,9 +24,11 @@ and the `v/w/t/b` preview toggles are preserved, except that `--video` file inpu
 has been removed. See [COMPATIBILITY.md](COMPATIBILITY.md).
 
 Camera indices are zero-based in SDL3 enumeration order; check `--list-devices`
-when using several cameras. Reuse `face_landmarker_v2_with_blendshapes.task` or
-specify `--model FILE`. The default search checks the executable and working
-directories and their parents. Normal setup does not download models.
+when using several cameras. The official face and hand models are checked into
+`vendor/models`, with fixed URLs, SHA256 hashes and Apache-2.0 license information.
+Builds verify them locally; users do not need a model download. The tracker uses
+the bundled face model by default; `--model FILE` overrides it. The older
+`face_landmarker_v2_with_blendshapes.task` search remains a fallback.
 Paths use UTF-8 on every OS. The Windows executable embeds a UTF-8 process
 manifest so command-line arguments and MediaPipe file access support Unicode
 paths without changing the system locale (Windows 10 version 1903 or later).
@@ -146,9 +148,9 @@ initial import while the exported artifacts remain available. Transfer
 artifacts are retained for seven days. Missing caches or changed SDK recipes
 require a fresh build when no matching transfer is available.
 
-CI downloads official models and images from fixed URLs with SHA256 checks into
-`results/ci-fixtures`. These are not downloaded by normal setup and are not
-packaged. Inference tests verify 478 face landmarks, 52 blendshapes and a
+CI downloads only test images from fixed URLs with SHA256 checks into
+`results/ci-fixtures`. Test images are not packaged. Inference tests use the
+checked-in models and verify 478 face landmarks, 52 blendshapes and a
 transformation matrix, plus 21 landmarks per hand, world coordinates and
 handedness over three timestamps. To run with explicit fixtures:
 
@@ -157,6 +159,29 @@ tracking-sdk-smoke FACE_MODEL HAND_MODEL FACE_IMAGE HAND_IMAGE [--gpu]
 ```
 
 Distribute the licenses and attribution under `share/nijitrack-cpp`. Packages
-exclude models, images and capture results. Fixed acquisition metadata is in
+include models and exclude test images and capture results. Fixed acquisition metadata is in
 `toolchain.lock.json` and `toolchain.unix.lock.json`; transitive MediaPipe
 dependencies are pinned by its upstream WORKSPACE/MODULE definitions.
+
+## Distribution packages
+
+- Windows: extract the complete ZIP and run `bin/nijitrack.exe`. Both model
+  bundles and their licenses are under `share/nijitrack/models`.
+- macOS arm64: extract the ZIP containing `nijitrack.app`. Its executable is
+  `Contents/MacOS/nijitrack`, SDL3 is in `Contents/Frameworks`, and both models
+  are in `Contents/Resources/models`. Invoke the executable directly to pass
+  CLI options. The current build requires macOS 15.0+. The bundle is ad-hoc
+  signed for integrity, not Developer ID signed or notarized.
+- Linux x86-64: make the AppImage executable and pass the same CLI options.
+  Models are inside `usr/share/nijitrack/models`; the AppRun launcher resolves
+  the bundled libraries. Use `APPIMAGE_EXTRACT_AND_RUN=1` if FUSE is unavailable.
+  The current build requires glibc 2.38+, GLIBCXX_3.4.32, host graphics drivers
+  and camera/device services. AppImage packaging does not lower this ABI floor.
+
+After building/installing, package with `cmake -P packaging/package-windows.cmake`
+on Windows or `bash packaging/package-macos.sh` / `bash packaging/package-linux.sh`
+on Unix (from `native`). Unix packaging stages must be fresh. Linux packaging
+downloads checksum-pinned native AppImage tools and runtime source archives.
+CI tests the final distribution at a Unicode path, verifies both model hashes,
+runs default-model face inference without `--model`, and tests face/hand SDK
+inference using the models extracted from the distribution.

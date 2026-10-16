@@ -262,33 +262,23 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
-      - name: Archive package preserving Unix executable permissions
-        env:
-          NATIVE_PLATFORM: ${{ matrix.platform }}
-        run: |
-          mkdir -p native/dist
-          cd native/install
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            archive="../dist/nijitrack-native-${NATIVE_PLATFORM}.zip"
-            cmake -E tar cf "$archive" --format=zip .
-            expected=bin/nijitrack.exe
-          else
-            archive="../dist/nijitrack-native-${NATIVE_PLATFORM}.tar.gz"
-            cmake -E tar czf "$archive" --format=gnutar .
-            expected=bin/nijitrack
-          fi
-          cmake -E tar tf "$archive" > ../results/build-environment/package-contents.txt
-          count=0
-          while IFS= read -r entry; do
-            entry=${entry%$'\r'}
-            entry=${entry#./}
-            if [[ "$entry" == "$expected" ]]; then count=$((count+1)); fi
-            if [[ "$entry" == bin/nijitrack-cpp || "$entry" == bin/nijitrack-cpp.exe ]]; then
-              echo "Duplicate tracker in package: $entry" >&2
-              exit 1
-            fi
-          done < ../results/build-environment/package-contents.txt
-          test "$count" -eq 1
+      - name: Restore AppImage packaging tools
+        if: runner.os == 'Linux'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: native/results/appimage-tools
+          key: native-appimage-tools-v1-${{ hashFiles('native/packaging/appimage-tools.lock') }}
+      - name: Package Windows ZIP with bundled models
+        if: runner.os == 'Windows'
+        run: cmake -P native/packaging/package-windows.cmake
+      - name: Package macOS application with bundled models
+        if: runner.os == 'macOS'
+        run: bash native/packaging/package-macos.sh
+      - name: Package Linux AppImage with bundled models
+        if: runner.os == 'Linux'
+        run: bash native/packaging/package-linux.sh
+      - name: Test final distribution and bundled models
+        run: cmake -P .github/scripts/test-native-distribution.cmake
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nijitrack-native-${{ matrix.platform }}
@@ -339,7 +329,7 @@ jobs:
       - name: Check packages and generate checksums
         shell: bash
         run: |
-          expected=(nijitrack-native-linux-x86_64.tar.gz nijitrack-native-macos-arm64.tar.gz nijitrack-native-windows-x86_64.zip)
+          expected=(nijitrack-native-linux-x86_64.AppImage nijitrack-native-macos-arm64.zip nijitrack-native-windows-x86_64.zip)
           for package in "${expected[@]}"; do test -s "dist/$package"; done
           test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 3
           cd dist
@@ -360,10 +350,12 @@ jobs:
 
           - Windows x86-64 / macOS arm64 / Linux x86-64
           - Includes executable with statically linked face/hand MediaPipe, SDL3 and licenses.
-          - No model, face image, video or captured data is included.
-          - Reuse your existing face_landmarker_v2_with_blendshapes.task with --model.
+          - Includes the official Apache-2.0 face/hand model bundles with verified SHA256 hashes.
+          - Uses the bundled face model by default; --model overrides it. No test images or captured data are included.
           - Camera capture and preview use SDL3; video file input is not supported.
-          - Linux requires libX11 and libXtst; Windows statically links the MSVC runtime.
+          - Windows ZIP / macOS arm64 .app ZIP / Linux x86-64 AppImage. Windows statically links the MSVC runtime.
+          - macOS requires 15.0+; the app is ad-hoc signed, not Developer ID signed or notarized.
+          - Linux requires glibc 2.38+, GLIBCXX_3.4.32 and host graphics/device services. AppImage supports extract-and-run without FUSE.
           - Camera permissions, global keyboard permissions and live camera tracking are not tested by CI.
 
           This rolling prerelease is updated after all three platform builds and startup tests pass.

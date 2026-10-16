@@ -61,7 +61,7 @@ static Options parse(int argc, char **argv) {
       if (equals != std::string::npos) throw std::runtime_error("Help does not take a value");
       std::cout << "nijitrack --device N [--osc-host HOST] [--osc-port PORT] [--flip] [--show]\n"
                    "nijitrack --image FILE | --device N_OR_NAME\n"
-                   "  --model FILE       default: executable/project directory\n  "
+                   "  --model FILE       default: bundled face model\n  "
                    "--output FILE     "
                    " JSONL (default stdout)\n"
                    "  --overlay FILE     first frame + landmarks as PPM\n  --flip             "

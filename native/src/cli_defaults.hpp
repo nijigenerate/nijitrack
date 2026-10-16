@@ -29,6 +29,12 @@ inline std::string default_model(const char *executable) {
   if (!error) executable_path = actual;
 #endif
 #endif
+  // Prefer the models shipped with this executable over working-directory files.
+  for (const auto &relative : {fs::path("../Resources/models"),
+                               fs::path("../share/nijitrack/models"), fs::path("models")}) {
+    const auto bundled = executable_path.parent_path() / relative / "face_landmarker.task";
+    if (fs::is_regular_file(bundled)) return path_to_utf8(bundled.lexically_normal());
+  }
   constexpr const char *name = "face_landmarker_v2_with_blendshapes.task";
   for (auto directory : {executable_path.parent_path(), fs::current_path()}) {
     for (int i = 0; i < 6; ++i) {
