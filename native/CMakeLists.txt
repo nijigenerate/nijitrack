@@ -34,12 +34,22 @@ else()
   target_link_libraries(MediaPipeC INTERFACE ${CMAKE_DL_LIBS})
   if(EXISTS "${MEDIAPIPE_SDK_DIR}/mediapipe_tracking_linkopts.txt")
     file(STRINGS "${MEDIAPIPE_SDK_DIR}/mediapipe_tracking_linkopts.txt" tracking_linkopts)
+    set(framework_pending OFF)
     foreach(flag IN LISTS tracking_linkopts)
-      # Bazel exports compiler-driver flags (-pthread, -Wl,... and framework
-      # pairs). Preserve their meaning and place dependent libraries after the
-      # static archives; wrapping them in LINKER: sends driver flags to ld.
-      target_link_libraries(MediaPipeC INTERFACE "${flag}")
+      # Keep each framework pair as one CMake link item. A bare framework name
+      # would otherwise become -lName, and repeated -framework flags get deduped.
+      if(framework_pending)
+        target_link_libraries(MediaPipeC INTERFACE "-framework ${flag}")
+        set(framework_pending OFF)
+      elseif(flag STREQUAL "-framework")
+        set(framework_pending ON)
+      else()
+        target_link_libraries(MediaPipeC INTERFACE "${flag}")
+      endif()
     endforeach()
+    if(framework_pending)
+      message(FATAL_ERROR "Missing framework name in MediaPipe link options")
+    endif()
   endif()
 endif()
 if(WIN32 AND NOT SDL3_DIR AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vendor/toolchain/SDL3-3.4.18/cmake/SDL3Config.cmake")

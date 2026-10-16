@@ -79,6 +79,40 @@ jobs:
       - name: Install macOS media dependencies
         if: runner.os == 'macOS'
         run: brew install ninja pkg-config jq
+      - name: Identify hosted compiler and SDK image
+        id: toolchain
+        run: |
+          mkdir -p native/results/build-environment
+          # ImageVersion changes when hosted compilers or system SDKs change.
+          # Pinned downloaded compilers are also covered by the lockfile keys.
+          printf '%s\n' "$RUNNER_OS" "$RUNNER_ARCH" "${ImageOS:?}" "${ImageVersion:?}" > native/results/build-environment/ci-toolchain.txt
+          cmake --version >> native/results/build-environment/ci-toolchain.txt
+          if [[ "$RUNNER_OS" != "Windows" ]]; then
+            clang --version >> native/results/build-environment/ci-toolchain.txt
+          fi
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            xcodebuild -version >> native/results/build-environment/ci-toolchain.txt
+            xcrun --show-sdk-version >> native/results/build-environment/ci-toolchain.txt
+          fi
+          fingerprint=$(cmake -E sha256sum native/results/build-environment/ci-toolchain.txt)
+          echo "fingerprint=${fingerprint%% *}" >> "$GITHUB_OUTPUT"
+      - name: Restore verified tools and downloads
+        id: tools-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            native/vendor/toolchain
+            native/vendor/downloads
+            native/vendor/sources
+            native/build-sdl3
+          key: native-tools-v1-${{ matrix.platform }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('native/toolchain*.lock.json', 'native/scripts/setup_tracking*', 'native/scripts/setup_native_toolchain.ps1') }}
+      - name: Restore static tracking SDK
+        id: sdk-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: native/vendor/sdk-halide
+          # Exact keys only: never fall back to an SDK built from another recipe.
+          key: native-sdk-v1-${{ matrix.platform }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('native/toolchain*.lock.json', 'native/assets.lock.json', 'native/patches/**', 'native/toolchain/**', 'native/scripts/*.sh', 'native/scripts/*.ps1', 'native/build.sh') }}
       - name: Verify checked-in native headers and data
         run: cmake -P native/scripts/setup_native.cmake
       - name: Check shell script syntax
@@ -92,6 +126,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: '& native/scripts/setup_native_toolchain.ps1'
+      - name: Save verified tools and downloads
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            native/vendor/toolchain
+            native/vendor/downloads
+            native/vendor/sources
+            native/build-sdl3
+          key: ${{ steps.tools-cache.outputs.cache-primary-key }}
       - name: Prepare Linux and macOS patched sources
         if: runner.os != 'Windows'
         run: bash native/build.sh prepare
@@ -100,14 +144,22 @@ jobs:
         shell: pwsh
         run: '& native/scripts/prepare_mediapipe_halide.ps1'
       - name: Build Linux and macOS static SDK
-        if: runner.os != 'Windows'
+        id: sdk-unix
+        if: runner.os != 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true'
         run: bash native/build.sh sdk
       - name: Build Windows static SDK
-        if: runner.os == 'Windows'
+        id: sdk-windows
+        if: runner.os == 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           & native/scripts/build_mediapipe_halide.ps1
           & native/tests/patch_management.ps1 -Dependencies
+      - name: Save completed static tracking SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true' && (steps.sdk-unix.conclusion == 'success' || steps.sdk-windows.conclusion == 'success')
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: native/vendor/sdk-halide
+          key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
       - name: Build, test and audit Linux and macOS tracker
         if: runner.os != 'Windows'
         run: bash native/build.sh install
@@ -157,6 +209,15 @@ jobs:
             native/build-mediapipe/halide/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
           retention-days: 7
+      - name: Report cache usage
+        if: always()
+        run: |
+          {
+            echo '### Native build cache'
+            echo 'Tools cache hit: ${{ steps.tools-cache.outputs.cache-hit }}'
+            echo 'Static SDK cache hit: ${{ steps.sdk-cache.outputs.cache-hit }}'
+            echo 'Tracker build, tests, inference and dependency audits run on every build.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     name: Update native nightly prerelease
