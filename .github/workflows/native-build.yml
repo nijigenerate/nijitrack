@@ -367,5 +367,13 @@ jobs:
             gh release create "$tag" --verify-tag --draft --prerelease --title "Native nightly (experimental)" --notes-file notes.md
           fi
           gh release upload "$tag" dist/* --clobber
+          # Retire only the archive formats replaced by .app ZIP / AppImage.
+          # Upload the replacements first so a failed upload cannot remove them.
+          gh release view "$tag" --json assets --jq '.assets[].name' > old-assets.txt
+          for obsolete in nijitrack-native-linux-x86_64.tar.gz nijitrack-native-macos-arm64.tar.gz; do
+            if grep -Fxq "$obsolete" old-assets.txt; then
+              gh release delete-asset "$tag" "$obsolete" --yes
+            fi
+          done
           gh api "repos/${GH_REPO}/git/refs/tags/${tag}" -X PATCH -f sha="$SOURCE_SHA" -F force=true --silent
           gh release edit "$tag" --draft=false --prerelease --latest=false --title "Native nightly (experimental)" --notes-file notes.md
