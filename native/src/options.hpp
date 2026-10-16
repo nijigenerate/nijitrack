@@ -60,8 +60,8 @@ static Options parse(int argc, char **argv) {
     if (a == "--help" || a == "-h") {
       if (equals != std::string::npos) throw std::runtime_error("Help does not take a value");
       std::cout << "nijitrack --device N [--osc-host HOST] [--osc-port PORT] [--flip] [--show]\n"
-                   "nijitrack-cpp --image FILE | --device N_OR_NAME\n"
-                   "  --model FILE       default: executable/project directory\n  "
+                   "nijitrack --image FILE | --device N_OR_NAME\n"
+                   "  --model FILE       default: bundled face model\n  "
                    "--output FILE     "
                    " JSONL (default stdout)\n"
                    "  --overlay FILE     first frame + landmarks as PPM\n  --flip             "
@@ -152,18 +152,20 @@ static Options parse(int argc, char **argv) {
       o.fps <= 0 || o.fps > 240 || o.frames < 0 || o.repeat < 1 || o.port < 1 || o.port > 65535)
     throw std::runtime_error("Invalid numeric option");
   for (auto &input : {o.model, o.image})
-    if (!input.empty() && !fs::is_regular_file(input))
+    if (!input.empty() && !fs::is_regular_file(niji::path_from_utf8(input)))
       throw std::runtime_error("Input file does not exist: " + input);
   for (const auto &destination : {o.output_path, o.overlay_path}) {
     if (destination.empty())
       continue;
     for (const auto &input : {o.model, o.image}) {
-      if (!input.empty() && fs::weakly_canonical(destination) == fs::weakly_canonical(input))
+      if (!input.empty() && fs::weakly_canonical(niji::path_from_utf8(destination)) ==
+                                fs::weakly_canonical(niji::path_from_utf8(input)))
         throw std::runtime_error("Output must not overwrite input: " + destination);
     }
   }
   if (!o.output_path.empty() && !o.overlay_path.empty() &&
-      fs::weakly_canonical(o.output_path) == fs::weakly_canonical(o.overlay_path))
+      fs::weakly_canonical(niji::path_from_utf8(o.output_path)) ==
+          fs::weakly_canonical(niji::path_from_utf8(o.overlay_path)))
     throw std::runtime_error("JSON and overlay need different output paths");
   return o;
 }

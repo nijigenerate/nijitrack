@@ -35,7 +35,7 @@ def ready_line(process, needle, timeout=15):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", required=True, help="Existing local face image; never downloaded or copied")
-    parser.add_argument("--model", default="../face_landmarker_v2_with_blendshapes.task")
+    parser.add_argument("--model", default=str(ROOT / "vendor/models/face_landmarker.task"))
     args = parser.parse_args()
     image = str(Path(args.image).resolve())
     OUT.mkdir(exist_ok=True)
@@ -82,7 +82,7 @@ def main():
                                 "keydown", "b", "keyup", "Shift_L", "keyup", "b", "key", "Return", "key", "space"],
                                env=env, check=True, timeout=5, capture_output=True)
 
-            probe_binary = env.get("NIJI_KEYBOARD_PROBE", str(ROOT / "build-keyboard/keyboard/keyboard-probe"))
+            probe_binary = env.get("NIJI_KEYBOARD_PROBE", str(ROOT / "build-sdl-static/keyboard/keyboard-probe"))
             with subprocess.Popen([probe_binary, "1000"],
                                   env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                   text=True) as probe:
@@ -102,7 +102,7 @@ def main():
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024*1024)
             sock.bind(("127.0.0.1", 0))
             sock.settimeout(0.05)
-            tracker_binary = env.get("NIJI_TRACKER_BIN", str(ROOT / "build-keyboard/nijitrack-cpp"))
+            tracker_binary = env.get("NIJI_TRACKER_BIN", str(ROOT / "build-sdl-static/nijitrack"))
             command = [tracker_binary, "--model", args.model, "--image", image,
                        "--repeat", "100", "--keyboard", "--osc-host", "127.0.0.1", "--osc-port",
                        str(sock.getsockname()[1]), "--output", "results/keyboard-face.jsonl"]

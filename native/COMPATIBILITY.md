@@ -1,7 +1,7 @@
 # Python版CLIとの互換性
 
 比較元はこのブランチの`nijitrack.py`です。全OSで`nijitrack`を生成・インストールし、
-従来の`nijitrack-cpp`も同じプログラムの別名として残します。
+配布するトラッカー実行ファイルはこの名前の1個だけです。
 
 | Python版の機能 | native版 |
 |---|---|

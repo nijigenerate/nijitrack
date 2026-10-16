@@ -7,11 +7,11 @@ static void require(bool condition, const char *message) {
   if (!condition) throw std::runtime_error(message);
 }
 int main() {
-  const auto placeholder = fs::temp_directory_path() / "nijitrack-cli-test-model.task";
+  const auto placeholder = fs::temp_directory_path() / fs::path(u8"nijitrack-解析_🧪.task");
   struct Cleanup { fs::path path; ~Cleanup() { fs::remove(path); } } cleanup{placeholder};
   std::ofstream(placeholder) << "parser fixture";
   auto options = [&](std::vector<std::string> arguments) {
-    arguments.insert(arguments.begin(), {"nijitrack", "--model", placeholder.string()});
+    arguments.insert(arguments.begin(), {"nijitrack", "--model", niji::path_to_utf8(placeholder)});
     std::vector<char *> argv;
     for (auto &argument : arguments) argv.push_back(argument.data());
     return parse(static_cast<int>(argv.size()), argv.data());
@@ -27,12 +27,13 @@ int main() {
             display.osc_host == "localhost", "Python options not preserved");
     auto disabled = options({"--device", "0", "--no-osc", "--no-keyboard"});
     require(disabled.osc_host.empty() && !disabled.keyboard, "Native opt-outs failed");
-    auto still = options({"--image", placeholder.string()});
+    auto still = options({"--image", niji::path_to_utf8(placeholder)});
     require(still.osc_host.empty() && !still.keyboard, "Offline mode acquired camera defaults");
     auto abbreviated = options({"--dev=0", "--osc-p=39541", "--show-v", "--"});
     require(abbreviated.device == "0" && abbreviated.port == 39541 && abbreviated.display.video,
             "argparse-style option spellings differ");
     for (auto arguments : std::vector<std::vector<std::string>>{
+        {"--device", "0", "--output", niji::path_to_utf8(placeholder)},
         {"--video", "unused.mp4"}, {"--video=unused.mp4"}, {"--device"}, {"--device", "--show"}, {"--device", "0", "--show=true"},
         {"--device", "0", "--osc-port", "invalid"}, {"--device", "0", "--osc-port", "65536"}}) {
       bool rejected = false;
@@ -40,9 +41,14 @@ int main() {
       require(rejected, "Invalid options accepted");
     }
     const std::vector<uint8_t> rgb{255,0,0, 0,255,0, 0,0,255, 255,255,255};
+    const std::vector<uint8_t> rgba{255,0,0,0, 0,255,0,64, 0,0,255,128, 255,255,255,255};
+    require(niji::rgb_pixels(rgba.data(), 2, 2, 4) == rgb,
+            "RGBA conversion changed RGB bytes or retained alpha");
     auto mirrored = niji::mirror_rgb(rgb.data(), 2, 2, 3);
     require(mirrored == std::vector<uint8_t>({0,255,0, 255,0,0, 255,255,255, 0,0,255}),
             "Flip must mirror each row before inference");
+    require(niji::rgb_pixels(rgba.data(), 2, 2, 4, true) == mirrored,
+            "RGBA conversion mirrored incorrectly");
     niji::platform::Network network;
     auto receiver = socket(AF_INET, SOCK_DGRAM, 0);
     require(receiver != niji::platform::invalid_socket, "Cannot create OSC receiver");

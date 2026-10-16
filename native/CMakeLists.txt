@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(nijitrack_cpp_prototype VERSION 0.1.0 LANGUAGES CXX)
+include(cmake/VerifyModels.cmake)
 if(MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
@@ -67,6 +68,10 @@ if(WIN32)
   target_link_libraries(nijitrack-desktop INTERFACE ws2_32)
 endif()
 add_executable(nijitrack-cpp src/main.cpp)
+if(WIN32)
+  # Use UTF-8 argv and narrow file APIs, including MediaPipe's C API paths.
+  target_sources(nijitrack-cpp PRIVATE cmake/nijitrack.manifest)
+endif()
 if(APPLE)
   target_link_options(nijitrack-cpp PRIVATE
     "LINKER:-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist")
@@ -80,9 +85,19 @@ else()
   target_compile_options(nijitrack-cpp PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
 endif()
 target_link_libraries(nijitrack-cpp PRIVATE MediaPipeC nijitrack-keyboard nijitrack-desktop nijitrack-media)
+set_target_properties(nijitrack-cpp PROPERTIES OUTPUT_NAME nijitrack)
+# Run even when the tracker is already up to date. POST_BUILD alone would
+# leave a stale alias behind when reusing an existing build directory.
+add_custom_target(remove-legacy-tracker ALL
+  COMMAND ${CMAKE_COMMAND} -E rm -f
+    "${CMAKE_CURRENT_BINARY_DIR}/nijitrack-cpp${CMAKE_EXECUTABLE_SUFFIX}"
+    "$<TARGET_FILE_DIR:nijitrack-cpp>/nijitrack-cpp${CMAKE_EXECUTABLE_SUFFIX}"
+  VERBATIM)
+add_dependencies(nijitrack-cpp remove-legacy-tracker)
 add_custom_command(TARGET nijitrack-cpp POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:nijitrack-cpp>"
-    "$<TARGET_FILE_DIR:nijitrack-cpp>/nijitrack${CMAKE_EXECUTABLE_SUFFIX}")
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/models" "$<TARGET_FILE_DIR:nijitrack-cpp>/models")
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/vendor/models/" DESTINATION share/nijitrack/models)
 if(APPLE)
   set(install_rpath "@loader_path/../lib")
 else()
@@ -90,11 +105,9 @@ else()
 endif()
 set_target_properties(nijitrack-cpp PROPERTIES BUILD_RPATH "${MEDIAPIPE_SDK_DIR}" INSTALL_RPATH "${install_rpath}")
 install(TARGETS nijitrack-cpp keyboard-probe RUNTIME DESTINATION bin)
-# Copy the installed executable after CMake rewrites its RPATH.
-install(CODE "execute_process(COMMAND \"${CMAKE_COMMAND}\" -E copy_if_different
-  \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/nijitrack-cpp${CMAKE_EXECUTABLE_SUFFIX}\"
-  \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/nijitrack${CMAKE_EXECUTABLE_SUFFIX}\"
-  COMMAND_ERROR_IS_FATAL ANY)")
+# Remove the historical duplicate when installing into an existing prefix.
+install(CODE "file(REMOVE
+  \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/nijitrack-cpp${CMAKE_EXECUTABLE_SUFFIX}\")")
 if(WIN32)
   add_custom_command(TARGET nijitrack-cpp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:SDL3::SDL3>" "$<TARGET_FILE_DIR:nijitrack-cpp>")
@@ -126,6 +139,9 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/FACE_CONNECTIONS_SOURCE.txt"
 include(CTest)
 if(BUILD_TESTING)
   add_executable(tracking-sdk-smoke tests/tracking_sdk_smoke.cpp)
+  if(WIN32)
+    target_sources(tracking-sdk-smoke PRIVATE cmake/nijitrack.manifest)
+  endif()
   target_compile_features(tracking-sdk-smoke PRIVATE cxx_std_20)
   target_link_libraries(tracking-sdk-smoke PRIVATE MediaPipeC Threads::Threads)
   add_executable(stream-tests tests/stream_tests.cpp)
@@ -152,7 +168,7 @@ if(BUILD_TESTING)
   add_test(NAME cli-help COMMAND nijitrack-cpp --help)
   add_test(NAME python-command-help
     COMMAND "$<TARGET_FILE_DIR:nijitrack-cpp>/nijitrack${CMAKE_EXECUTABLE_SUFFIX}" -h)
-  set_tests_properties(cli-help PROPERTIES PASS_REGULAR_EXPRESSION "nijitrack-cpp --image")
+  set_tests_properties(cli-help PROPERTIES PASS_REGULAR_EXPRESSION "nijitrack --image")
   add_test(NAME cli-missing-value COMMAND nijitrack-cpp --image)
   set_tests_properties(cli-missing-value PROPERTIES WILL_FAIL TRUE)
 endif()

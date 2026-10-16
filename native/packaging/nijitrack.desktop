@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=nijitrack
+Comment=Face tracking and OSC output
+Exec=nijitrack --device 0
+Icon=nijitrack
+Terminal=true
+Categories=AudioVideo;

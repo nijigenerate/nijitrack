@@ -7,14 +7,14 @@ on:
       - 'native/**'
       - '.github/workflows/native-build.yml'
       - '.github/workflows/native-nightly.yml'
-      - '.github/scripts/native-cache-transfer.cmake'
+      - '.github/scripts/*.cmake'
   pull_request:
     branches: [main]
     paths:
       - 'native/**'
       - '.github/workflows/native-build.yml'
       - '.github/workflows/native-nightly.yml'
-      - '.github/scripts/native-cache-transfer.cmake'
+      - '.github/scripts/*.cmake'
   workflow_dispatch:
     inputs:
       publish:
@@ -213,6 +213,16 @@ jobs:
         with:
           path: native/vendor/sdk-halide
           key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
+      - name: Stage legacy filename to verify install cleanup
+        run: |
+          mkdir -p native/install/bin native/build-sdl-static
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cmake -E touch native/install/bin/nijitrack-cpp.exe
+            cmake -E touch native/build-sdl-static/nijitrack-cpp.exe
+          else
+            cmake -E touch native/install/bin/nijitrack-cpp
+            cmake -E touch native/build-sdl-static/nijitrack-cpp
+          fi
       - name: Build, test and audit Linux and macOS tracker
         if: runner.os != 'Windows'
         run: bash native/build.sh install
@@ -224,14 +234,20 @@ jobs:
           ctest --test-dir native/build-mediapipe/halide --output-on-failure
       - name: Test face and hand inference with verified official fixtures
         run: bash native/tests/run_tracking_smoke.sh
+      - name: Test Unicode executable, model and output paths
+        run: cmake -P .github/scripts/test-native-unicode-paths.cmake
       - name: Test packaged executable startup
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             native/install/bin/nijitrack.exe -h
-            native/install/bin/nijitrack-cpp.exe --help
+            native/install/bin/nijitrack.exe --help
+            test ! -e native/install/bin/nijitrack-cpp.exe
+            test ! -e native/build-sdl-static/nijitrack-cpp.exe
           else
             native/install/bin/nijitrack -h
-            native/install/bin/nijitrack-cpp --help
+            native/install/bin/nijitrack --help
+            test ! -e native/install/bin/nijitrack-cpp
+            test ! -e native/build-sdl-static/nijitrack-cpp
           fi
       - name: Export existing caches for main migration
         id: cache-export
@@ -250,17 +266,23 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
-      - name: Archive package preserving Unix executable permissions
-        env:
-          NATIVE_PLATFORM: ${{ matrix.platform }}
-        run: |
-          mkdir -p native/dist
-          cd native/install
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cmake -E tar cf "../dist/nijitrack-native-${NATIVE_PLATFORM}.zip" --format=zip .
-          else
-            cmake -E tar czf "../dist/nijitrack-native-${NATIVE_PLATFORM}.tar.gz" --format=gnutar .
-          fi
+      - name: Restore AppImage packaging tools
+        if: runner.os == 'Linux'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: native/results/appimage-tools
+          key: native-appimage-tools-v1-${{ hashFiles('native/packaging/appimage-tools.lock') }}
+      - name: Package Windows ZIP with bundled models
+        if: runner.os == 'Windows'
+        run: cmake -P native/packaging/package-windows.cmake
+      - name: Package macOS application with bundled models
+        if: runner.os == 'macOS'
+        run: bash native/packaging/package-macos.sh
+      - name: Package Linux AppImage with bundled models
+        if: runner.os == 'Linux'
+        run: bash native/packaging/package-linux.sh
+      - name: Test final distribution and bundled models
+        run: cmake -P .github/scripts/test-native-distribution.cmake
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nijitrack-native-${{ matrix.platform }}
@@ -311,7 +333,7 @@ jobs:
       - name: Check packages and generate checksums
         shell: bash
         run: |
-          expected=(nijitrack-native-linux-x86_64.tar.gz nijitrack-native-macos-arm64.tar.gz nijitrack-native-windows-x86_64.zip)
+          expected=(nijitrack-native-linux-x86_64.AppImage nijitrack-native-macos-arm64.zip nijitrack-native-windows-x86_64.zip)
           for package in "${expected[@]}"; do test -s "dist/$package"; done
           test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 3
           cd dist
@@ -332,10 +354,12 @@ jobs:
 
           - Windows x86-64 / macOS arm64 / Linux x86-64
           - Includes executable with statically linked face/hand MediaPipe, SDL3 and licenses.
-          - No model, face image, video or captured data is included.
-          - Reuse your existing face_landmarker_v2_with_blendshapes.task with --model.
+          - Includes the official Apache-2.0 face/hand model bundles with verified SHA256 hashes.
+          - Uses the bundled face model by default; --model overrides it. No test images or captured data are included.
           - Camera capture and preview use SDL3; video file input is not supported.
-          - Linux requires libX11 and libXtst; Windows statically links the MSVC runtime.
+          - Windows ZIP / macOS arm64 .app ZIP / Linux x86-64 AppImage. Windows statically links the MSVC runtime.
+          - macOS requires 15.0+; the app is ad-hoc signed, not Developer ID signed or notarized.
+          - Linux requires glibc 2.38+, GLIBCXX_3.4.32 and host graphics/device services. AppImage supports extract-and-run without FUSE.
           - Camera permissions, global keyboard permissions and live camera tracking are not tested by CI.
 
           This rolling prerelease is updated after all three platform builds and startup tests pass.
@@ -347,5 +371,13 @@ jobs:
             gh release create "$tag" --verify-tag --draft --prerelease --title "Native nightly (experimental)" --notes-file notes.md
           fi
           gh release upload "$tag" dist/* --clobber
+          # Retire only the archive formats replaced by .app ZIP / AppImage.
+          # Upload the replacements first so a failed upload cannot remove them.
+          gh release view "$tag" --json assets --jq '.assets[].name' > old-assets.txt
+          for obsolete in nijitrack-native-linux-x86_64.tar.gz nijitrack-native-macos-arm64.tar.gz; do
+            if grep -Fxq "$obsolete" old-assets.txt; then
+              gh release delete-asset "$tag" "$obsolete" --yes
+            fi
+          done
           gh api "repos/${GH_REPO}/git/refs/tags/${tag}" -X PATCH -f sha="$SOURCE_SHA" -F force=true --silent
           gh release edit "$tag" --draft=false --prerelease --latest=false --title "Native nightly (experimental)" --notes-file notes.md

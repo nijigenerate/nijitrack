@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Explicit CI integration test. Fixtures stay in results, never in the package.
+# Explicit CI integration test. Only test images stay outside the package.
 set -euo pipefail
 native_root=$(CDPATH= cd "$(dirname "$0")/.." && pwd -P)
 fixtures="$native_root/results/ci-fixtures"
@@ -20,5 +20,5 @@ while read -r name expected url; do
 done < "$native_root/tests/tracking-fixtures.txt"
 executable="$native_root/build-sdl-static/tracking-sdk-smoke"
 [[ ! -f "$executable.exe" ]] || executable="$executable.exe"
-"$executable" "$fixtures/face_landmarker.task" "$fixtures/hand_landmarker.task" \
+"$executable" "$native_root/vendor/models/face_landmarker.task" "$native_root/vendor/models/hand_landmarker.task" \
   "$fixtures/portrait.jpg" "$fixtures/right_hands.jpg"
