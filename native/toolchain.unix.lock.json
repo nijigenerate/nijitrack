@@ -1,0 +1,18 @@
+{
+  "linux-x86_64": {
+    "bazel_platform": "linux-x86_64",
+    "bazel_sha256": "c97f02133adce63f0c28678ac1f21d65fa8255c80429b588aeeba8a1fac6202b",
+    "halide_platform": "x86-64-linux",
+    "halide_sha256": "d290fadf3f358c94aacf43c883de6468bb98883e26116920afd491ec0e440cd2"
+  },
+  "macos-arm64": {
+    "bazel_platform": "darwin-arm64",
+    "bazel_sha256": "02b117b97d0921ae4d4f4e11d27e2c0930381df416e373435d5d0419c6a26f24",
+    "halide_platform": "arm-64-osx",
+    "halide_sha256": "db5d20d75fa7463490fcbc79c89f0abec9c23991f787c8e3e831fff411d5395c"
+  },
+  "sdl3": {
+    "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz",
+    "sha256": "9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3"
+  }
+}

@@ -1,7 +1,6 @@
 // Exercise the real parser and display with synthetic data; no camera/model access.
 #include "../src/options.hpp"
 #include "../src/osc.hpp"
-#include "../src/video.hpp"
 #include <fstream>
 
 static void require(bool condition, const char *message) {
@@ -34,7 +33,7 @@ int main() {
     require(abbreviated.device == "0" && abbreviated.port == 39541 && abbreviated.display.video,
             "argparse-style option spellings differ");
     for (auto arguments : std::vector<std::vector<std::string>>{
-        {"--device"}, {"--device", "--show"}, {"--device", "0", "--show=true"},
+        {"--video", "unused.mp4"}, {"--video=unused.mp4"}, {"--device"}, {"--device", "--show"}, {"--device", "0", "--show=true"},
         {"--device", "0", "--osc-port", "invalid"}, {"--device", "0", "--osc-port", "65536"}}) {
       bool rejected = false;
       try { options(arguments); } catch (const std::exception &) { rejected = true; }
@@ -77,72 +76,53 @@ int main() {
     niji::platform::close_socket(receiver);
     close_receiver.socket = niji::platform::invalid_socket;
     for (int i = 0; i < 128; ++i) osc.blend("jawOpen", 0.5);
-    niji::DisplayOptions layers{true, false, false, false};
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER,"dummy");
+    niji::SdlRuntime sdl(false,true);
+    niji::DisplayOptions layers{true,false,false,false};
     MpFaceLandmarkerResult result{};
-    auto image = niji::render_preview(rgb.data(), 2, 2, result, nullptr, layers);
-    require(image.at<cv::Vec3b>(0,0) == cv::Vec3b(0,0,255) &&
-            image.at<cv::Vec3b>(0,1) == cv::Vec3b(0,255,0) &&
-            image.at<cv::Vec3b>(1,0) == cv::Vec3b(255,0,0), "Preview RGB colors differ");
-    layers.toggle('v');
-    image = niji::render_preview(rgb.data(), 2, 2, result, nullptr, layers);
-    require(cv::countNonZero(image.reshape(1)) == 0, "Video toggle failed");
-    for (char key : {'w','t','b'}) layers.toggle(key);
-    require(layers.wire && layers.text && layers.blend, "Layer toggles failed");
+    auto image=niji::render_preview(rgb.data(),2,2,result,nullptr,layers);
+    require(image.rgb==rgb,"Preview must preserve RGB byte order");
+    layers.toggle('v'); layers.toggle('w'); layers.toggle('t'); layers.toggle('b');
+    require(!layers.video && layers.wire && layers.text && layers.blend,"Layer toggles failed");
     std::vector<uint8_t> blank(640*480*3);
     std::vector<MpNormalizedLandmark> landmarks(478);
-    for (auto &landmark : landmarks) { landmark.x = 0.5f; landmark.y = 0.5f; }
-    landmarks[0].x = 0.25f;
-    landmarks[37].x = 0.75f;
-    MpNormalizedLandmarks face{landmarks.data(), 478};
-    result.face_landmarks = &face; result.face_landmarks_count = 1;
+    for (auto &landmark:landmarks) { landmark.x=0.5f; landmark.y=0.5f; }
+    landmarks[0].x=0.25f; landmarks[37].x=0.75f;
+    MpNormalizedLandmarks face{landmarks.data(),478};
+    result.face_landmarks=&face; result.face_landmarks_count=1;
     MpCategory category{};
-    char category_name[] = "jawOpen";
-    category.category_name = category_name; category.score = 0.5f;
-    MpCategories blend{&category, 1};
-    result.face_blendshapes = &blend; result.face_blendshapes_count = 1;
+    char category_name[]="jawOpen";
+    category.category_name=category_name; category.score=0.5f;
+    MpCategories blend{&category,1};
+    result.face_blendshapes=&blend; result.face_blendshapes_count=1;
     niji::Pose pose;
-    image = niji::render_preview(blank.data(), 640, 480, result, &pose, layers);
-    require(image.at<cv::Vec3b>(240,160) == cv::Vec3b(0,0,255), "Wire landmarks missing");
-    require(image.at<cv::Vec3b>(240,200) == cv::Vec3b(0,255,0), "Wire connections missing");
-    require(image.at<cv::Vec3b>(122,500) == cv::Vec3b(0,255,255), "Blendshape bar missing");
-    require(cv::countNonZero(image(cv::Rect(10,10,290,25)).reshape(1)) > 0, "Pose text missing");
-    const auto video_path = fs::temp_directory_path() / "nijitrack-opencv-test.avi";
-    Cleanup video_cleanup{video_path};
-    {
-      cv::VideoWriter writer(video_path.string(), cv::CAP_OPENCV_MJPEG,
-                             cv::VideoWriter::fourcc('M','J','P','G'), 30, cv::Size(32,24));
-      require(writer.isOpened(), "Cannot create OpenCV synthetic video");
-      for (int i = 0; i < 3; ++i) writer.write(cv::Mat(24,32,CV_8UC3,cv::Scalar(0,0,255)));
+    image=niji::render_preview(blank.data(),640,480,result,&pose,layers);
+    niji::Preview preview(layers,true);
+    preview.draw(image);
+    auto readback=preview.readback();
+    auto rendered=niji::surface(SDL_ConvertSurface(readback.get(),SDL_PIXELFORMAT_RGB24));
+    auto pixel=[&](int x,int y) {
+      const auto *p=static_cast<const uint8_t *>(rendered->pixels)+y*rendered->pitch+x*3;
+      return std::array<uint8_t,3>{p[0],p[1],p[2]};
+    };
+    require(pixel(160,240)==std::array<uint8_t,3>{255,0,0},"Wire landmarks missing");
+    require(pixel(200,240)==std::array<uint8_t,3>{0,255,0},"Wire connections missing");
+    require(pixel(500,122)==std::array<uint8_t,3>{255,255,0},"Blendshape bar missing");
+    require(!image.labels.empty(),"Pose labels missing");
+    SDL_Event key{}; key.type=SDL_EVENT_KEY_DOWN; key.key.windowID=preview.window_id(); key.key.key=SDLK_V;
+    require(SDL_PushEvent(&key) && preview.pump() && preview.options.video,"SDL key toggle failed");
+    auto camera_surface=niji::surface(SDL_CreateSurface(32,24,SDL_PIXELFORMAT_BGR24));
+    for (int y=0;y<24;++y) {
+      auto *row=static_cast<uint8_t *>(camera_surface->pixels)+y*camera_surface->pitch;
+      for (int x=0;x<32;++x) { row[x*3]=0; row[x*3+1]=0; row[x*3+2]=255; }
     }
-    niji::VideoReader reader(video_path.string(), false, 16, 16, 30);
-    std::vector<uint8_t> decoded;
-    int width = 0, height = 0;
-    for (int i = 0; i < 3; ++i) {
-      require(reader.next(decoded,width,height), "OpenCV video frame missing");
-      require(width == 16 && height == 12 && decoded.size() == 16*12*3,
-              "Video resize must preserve aspect ratio");
-      require(decoded[0] > 240 && decoded[1] < 10 && decoded[2] < 10,
-              "Video frame must be RGB before inference");
-    }
-    require(!reader.next(decoded,width,height), "Video EOF not respected");
-    // The real OpenCV capture worker must keep all offline frames and RGB ownership.
-    niji::AsyncVideoReader asynchronous(video_path.string(), false, 16, 16, 30);
-    for (std::uint64_t i = 0; i < 3; ++i) {
-      niji::VideoFrame frame;
-      require(asynchronous.next(frame, std::chrono::seconds(3)) == niji::ReadStatus::value,
-              "Threaded video frame missing");
-      require(frame.sequence == i && frame.width == 16 && frame.height == 12 &&
-              frame.rgb[0] > 240 && frame.rgb[2] < 10, "Threaded video order/color differs");
-    }
-    niji::VideoFrame final_frame;
-    require(asynchronous.next(final_frame, std::chrono::seconds(3)) == niji::ReadStatus::end,
-            "Threaded video EOF missing");
-    asynchronous.join();
-    require(asynchronous.captured() == 3 && asynchronous.dropped() == 0, "Offline frames were dropped");
-
+    std::vector<uint8_t> converted;
+    int width=0,height=0;
+    niji::copy_rgb(camera_surface.get(),16,16,converted,width,height);
+    require(width==16 && height==12 && converted.size()==16*12*3,"Camera resize must preserve aspect ratio");
+    require(converted[0]==255 && converted[1]==0 && converted[2]==0,"Camera surface must convert BGR to RGB");
     return 0;
   } catch (const std::exception &error) {
-    std::cerr << error.what() << '\n';
-    return 1;
+    std::cerr<<error.what()<<'\n'; return 1;
   }
 }

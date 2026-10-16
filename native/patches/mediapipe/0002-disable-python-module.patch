@@ -1,0 +1,20 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index f5b6313..95d4351 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -61,14 +61,7 @@ archive_override(
+     urls = ["https://github.com/protocolbuffers/protobuf/archive/refs/tags/v6.31.1.zip"],
+ )
+ 
+-python = use_extension("@rules_python_bzlmod//python/extensions:python.bzl", "python")
+-python.toolchain(
+-    ignore_root_user_error = True,
+-    is_default = True,
+-    python_version = "3.11",
+-)
+-use_repo(python, "python_3_11")
+-
++# No hermetic Python toolchain is registered.
+ npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+ npm.npm_translate_lock(
+     name = "npm",

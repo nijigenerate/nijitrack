@@ -60,7 +60,7 @@ inline auto send_packet(Socket fd, const std::vector<uint8_t> &data) {
   return ::send(fd, reinterpret_cast<const char *>(data.data()), static_cast<int>(data.size()), 0);
 }
 
-// Start FFmpeg directly with an argument vector; never invoke a command shell.
+// Spawn a child process with an argument vector; used by process handling tests.
 class PipeProcess {
   FILE *stream_ = nullptr;
 #ifdef _WIN32
@@ -122,7 +122,7 @@ public:
     CloseHandle(write_pipe);
     if (!ok) {
       CloseHandle(read_pipe);
-      throw std::runtime_error("Cannot start ffmpeg; install it on PATH");
+      throw std::runtime_error("Cannot start child process");
     }
     CloseHandle(child.hThread);
     process_ = child.hProcess;
@@ -137,7 +137,7 @@ public:
       TerminateProcess(process_, 1);
       WaitForSingleObject(process_, INFINITE);
       CloseHandle(process_);
-      throw std::runtime_error("Cannot open FFmpeg pipe stream");
+      throw std::runtime_error("Cannot open child process pipe stream");
     }
 #else
     int fd[2];
@@ -163,7 +163,7 @@ public:
     if (status) {
       ::close(fd[0]);
       process_ = -1;
-      throw std::runtime_error(std::string("ffmpeg: ") + std::strerror(status));
+      throw std::runtime_error(std::string("posix_spawnp: ") + std::strerror(status));
     }
     stream_ = fdopen(fd[0], "rb");
     if (!stream_) {
@@ -206,7 +206,7 @@ public:
     CloseHandle(process_);
     process_ = nullptr;
     if (!ok || code != 0)
-      throw std::runtime_error("ffmpeg decoding failed");
+      throw std::runtime_error("Child process failed");
 #else
     int status = 0;
     pid_t done;
@@ -215,7 +215,7 @@ public:
     } while (done < 0 && errno == EINTR);
     process_ = -1;
     if (done < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
-      throw std::runtime_error("ffmpeg decoding failed");
+      throw std::runtime_error("Child process failed");
 #endif
   }
 };

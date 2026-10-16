@@ -1,0 +1,7 @@
+# Reference flags used by scripts/build_mediapipe_halide.ps1.
+# Do not invoke the upstream workspace without prepare/patch scripts.
+build --compilation_mode=opt
+build --define=MEDIAPIPE_DISABLE_OPENCV=1
+build --define=MEDIAPIPE_ENABLE_HALIDE=1
+build --copt=-DNDEBUG
+build --copt=-DLITERT_DISABLE_NPU

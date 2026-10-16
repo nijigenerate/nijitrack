@@ -1,0 +1,60 @@
+[
+  {
+    "repository": "protobuf~",
+    "series": [
+      {
+        "patch": "dependencies/protobuf-zlib.patch",
+        "files": [
+          {
+            "path": "src/google/protobuf/io/BUILD.bazel",
+            "before": "7d3a7b344c32b604753278990178440dc389be327df635be8154e17b82a0a753",
+            "after": "fbe5968df6aea0bc0ae25b81caab2d312a03ff898bfdb740c4c2e948b48f7318"
+          }
+        ]
+      }
+    ],
+    "overlays": []
+  },
+  {
+    "repository": "XNNPACK",
+    "series": [
+      {
+        "patch": "dependencies/xnnpack-native-generator.patch",
+        "files": [
+          {
+            "path": "BUILD.bazel",
+            "before": "dd4bd4c06f5ffdbb962a05fa949d110e5af6fbd548ff1aa951faa187129a5c82",
+            "after": "2d5d38dbff7a9425d80f82227816594b8c92e81df8b598c561191de8ca4748d8"
+          }
+        ]
+      }
+    ],
+    "overlays": [
+      {
+        "source": "toolchain/mediapipe/concat_sources.cpp",
+        "target": "nijitrack_concat_sources.cpp"
+      },
+      {
+        "source": "toolchain/mediapipe/generate_build_identifier.cmake",
+        "target": "generate_build_identifier.cmake"
+      }
+    ]
+  },
+  {
+    "repository": "llvm-raw",
+    "upstream": "llvm/llvm-project@7a33569510535f0b917a2e50f644bf57490aee24",
+    "series": [
+      {
+        "patch": "dependencies/llvm-native-overlay.patch",
+        "files": [
+          {
+            "path": "utils/bazel/configure.bzl",
+            "before": "eaf0f4175c69f180e5df3038688472532b6485f9c292ca1909e96db8339d2421",
+            "after": "d293da55304a36caca26d2c04be92c85a46182d3f3e75725163c7e8d56871926"
+          }
+        ]
+      }
+    ],
+    "overlays": []
+  }
+]

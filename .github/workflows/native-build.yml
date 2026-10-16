@@ -52,7 +52,7 @@ jobs:
     needs: source
     name: ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -71,34 +71,35 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.source.outputs.sha }}
-      - name: Install Linux keyboard development dependencies
+      - name: Install Linux media and keyboard development dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libx11-dev libxtst-dev libopencv-dev
-      - name: Install macOS OpenCV
+          sudo apt-get install -y --no-install-recommends clang ninja-build binutils jq curl pkg-config libegl-dev libgles-dev libx11-dev libxtst-dev libasound2-dev libpulse-dev libudev-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libwayland-dev libxkbcommon-dev
+      - name: Install macOS media dependencies
         if: runner.os == 'macOS'
-        run: brew install opencv
-      - name: Restore and verify native development assets without Python
-        env:
-          EXPECTED_PLATFORM: ${{ matrix.platform }}
-        working-directory: native
-        run: cmake -DNATIVE_PLATFORM="$EXPECTED_PLATFORM" -P scripts/setup_native.cmake
-      - name: Configure Windows
-        if: runner.os == 'Windows'
-        run: cmake -S native -B native/build-ci -G "Visual Studio 17 2022" -A x64 -DNIJITRACK_KEYBOARD=ON -DBUILD_TESTING=ON
-      - name: Configure Linux and macOS
-        if: runner.os != 'Windows'
+        run: brew install ninja pkg-config jq
+      - name: Verify checked-in native headers and data
+        run: cmake -P native/scripts/setup_native.cmake
+      - name: Check shell script syntax
         run: |
-          args=()
-          if [[ "$RUNNER_OS" == "macOS" ]]; then args+=("-DOpenCV_DIR=$(brew --prefix opencv)/lib/cmake/opencv4"); fi
-          cmake -S native -B native/build-ci -DCMAKE_BUILD_TYPE=Release -DNIJITRACK_KEYBOARD=ON -DBUILD_TESTING=ON "${args[@]}"
-      - name: Build tracker and native keyboard backend
-        run: cmake --build native/build-ci --config Release --parallel 2
-      - name: Test startup, CLI validation and child process handling
-        run: ctest --test-dir native/build-ci -C Release --output-on-failure
-      - name: Package executable, SDK libraries and licenses
-        run: cmake --install native/build-ci --config Release --prefix "$GITHUB_WORKSPACE/native/install"
+          bash -n native/build.sh
+          for script in native/scripts/*.sh native/tests/*.sh; do bash -n "$script"; done
+      - name: Build Linux and macOS with shell scripts
+        if: runner.os != 'Windows'
+        run: bash native/build.sh all
+      - name: Build Windows with PowerShell
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & native/scripts/setup_native_toolchain.ps1
+          & native/scripts/prepare_mediapipe_halide.ps1
+          & native/scripts/build_mediapipe_halide.ps1
+          & native/tests/patch_management.ps1 -Dependencies
+          & native/scripts/build_native.ps1 -Install
+          ctest --test-dir native/build-mediapipe/halide --output-on-failure
+      - name: Test face and hand inference with verified official fixtures
+        run: bash native/tests/run_tracking_smoke.sh
       - name: Test packaged executable startup
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
@@ -124,6 +125,18 @@ jobs:
           name: nijitrack-native-${{ matrix.platform }}
           path: native/dist/*
           if-no-files-found: error
+          retention-days: 7
+      - name: Preserve build diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: diagnostics-${{ matrix.platform }}
+          path: |
+            native/results/build-environment/*.txt
+            native/results/build-environment/*.json
+            native/build-sdl-static/Testing/Temporary/LastTest.log
+            native/build-mediapipe/halide/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
           retention-days: 7
 
   publish:
@@ -166,12 +179,12 @@ jobs:
           Build: https://github.com/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}
 
           - Windows x86-64 / macOS arm64 / Linux x86-64
-          - Includes executable, MediaPipe shared libraries and licenses.
+          - Includes executable with statically linked face/hand MediaPipe, SDL3 and licenses.
           - No model, face image, video or captured data is included.
           - Reuse your existing face_landmarker_v2_with_blendshapes.task with --model.
-          - Camera/video capture and preview use OpenCV; no external FFmpeg executable is needed.
-          - Linux requires glibc 2.39+, OpenCV, libX11 and libXtst; macOS requires OpenCV; Windows requires the MSVC runtime.
-          - Camera permissions, global keyboard permissions and real-face tracking are not tested by CI.
+          - Camera capture and preview use SDL3; video file input is not supported.
+          - Linux requires libX11 and libXtst; Windows statically links the MSVC runtime.
+          - Camera permissions, global keyboard permissions and live camera tracking are not tested by CI.
 
           This rolling prerelease is updated after all three platform builds and startup tests pass.
           EOF_NOTES

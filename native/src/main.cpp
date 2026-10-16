@@ -1,12 +1,12 @@
 #include "keyboard.hpp"
 #include "platform.hpp"
 #include "tracking.hpp"
-#include "camera.hpp"
-#include "preview.hpp"
+#include "sdl_media.hpp"
+#include "sdl_preview.hpp"
 #include "cli_defaults.hpp"
 #include "options.hpp"
 #include "osc.hpp"
-#include "video.hpp"
+#include "sdl_camera.hpp"
 #include <bit>
 #include <cctype>
 #include <cerrno>
@@ -80,7 +80,6 @@ public:
     MpFaceLandmarkerOptions o{};
     o.base_options.model_asset_path = model.c_str();
     o.base_options.file_descriptor = -1;
-    o.base_options.delegate = MP_DELEGATE_CPU;
 #ifdef _WIN32
     o.base_options.host_system = MP_HOST_SYSTEM_WINDOWS;
 #elif defined(__APPLE__)
@@ -232,8 +231,9 @@ static void devices() {
 int main(int argc, char **argv) {
   try {
     auto o = parse(argc, argv);
+    niji::SdlRuntime sdl(o.list || !o.device.empty(),o.show);
     if (o.list) { devices(); return 0; }
-    // HighGUI and OS keyboard event pumps stay on the main thread.
+    // SDL rendering/events and global keyboard pumps stay on the main thread.
     std::unique_ptr<niji::Preview> preview;
     if (o.show) preview = std::make_unique<niji::Preview>(o.display);
     niji::SharedDisplayOptions display_settings(o.display);
@@ -244,7 +244,7 @@ int main(int argc, char **argv) {
       keyboard = std::make_unique<niji::keyboard::Capture>();
       std::cerr << "keyboard=" << keyboard->backend_name() << std::endl;
     }
-    niji::WorkerStream<cv::Mat> inference(niji::Delivery::latest,
+    niji::WorkerStream<niji::PreviewFrame> inference(niji::Delivery::latest,
         [o, &display_settings](auto &stream) {
       // The landmarker, pose tracker, JSON stream and frame OSC sender have one owner.
       std::ofstream file;
@@ -311,7 +311,7 @@ int main(int argc, char **argv) {
           auto status = MpImageDataUint8(image, &pixels, &error);
           check(status, error, "read preview pixels");
           if (MpImageGetChannels(image) != 3) throw std::runtime_error("Preview requires RGB input");
-          // Pure image rendering is safe on the worker; only imshow/waitKey run on main.
+          // Copy all pixels/geometry before releasing the inference result.
           auto rendered = niji::render_preview(pixels, MpImageGetWidth(image), MpImageGetHeight(image),
                                                result.value, pp, display_settings.get());
           stream.publish(std::move(rendered));
@@ -326,9 +326,8 @@ int main(int argc, char **argv) {
         for (int i = 0; i < o.repeat && !stream.stopped(); ++i)
           process(image.handle, static_cast<int64_t>(std::llround(i*1000.0/o.fps)));
       } else if (!stream.stopped()) {
-        niji::AsyncVideoReader reader(o.device.empty() ? o.video : o.device,
-                                      !o.device.empty(), o.width, o.height, o.fps);
-        niji::VideoFrame frame;
+        niji::AsyncCameraReader reader(o.device, o.width, o.height, o.fps);
+        niji::CameraFrame frame;
         auto report_start = Clock::now();
         int report_processed = 0, report_detected = 0;
         std::uint64_t report_captured = 0, report_dropped = 0;
@@ -374,9 +373,7 @@ int main(int argc, char **argv) {
           auto image_status = MpImageCreateFromUint8Data(kMpImageFormatSrgb, frame.width, frame.height,
               frame.rgb.data(), static_cast<int>(frame.rgb.size()), &image.handle, &error);
           check(image_status, error, "create RGB image");
-          const int64_t timestamp = o.device.empty()
-              ? static_cast<int64_t>(std::llround(frame.sequence*1000.0/o.fps))
-              : std::chrono::duration_cast<std::chrono::milliseconds>(frame.captured_at-start).count();
+          const int64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(frame.captured_at-start).count();
           process(image.handle, timestamp);
           const double age = std::chrono::duration<double, std::milli>(Clock::now()-frame.captured_at).count();
           frame_age_total += age;
@@ -408,7 +405,11 @@ int main(int argc, char **argv) {
         if (!preview->pump()) { inference.request_stop(); break; }
         display_settings.set(preview->options);
       }
-      cv::Mat rendered;
+      if (!preview) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) if (event.type==SDL_EVENT_QUIT) inference.request_stop();
+      }
+      niji::PreviewFrame rendered;
       const auto status = inference.next(rendered, std::chrono::milliseconds(5));
       if (status == niji::ReadStatus::end) break;
       if (status == niji::ReadStatus::value && preview) preview->present(rendered);

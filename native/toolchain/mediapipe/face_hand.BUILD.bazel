@@ -1,0 +1,14 @@
+# Intended package: mediapipe/tasks/c/nijitrack_tracking in the pinned source tree.
+# This target limits the C API to image, face and hand tracking. It does not
+# bypass the upstream WORKSPACE's Python setup; do not build it unpatched.
+load(":tracking_archive.bzl", "tracking_archive")
+
+tracking_archive(
+    name = "mediapipe_tracking",
+    deps = [
+        "//mediapipe/tasks/c/core:common",
+        "//mediapipe/tasks/c/vision/core:image_c_lib",
+        "//mediapipe/tasks/c/vision/face_landmarker:face_landmarker_c_lib",
+        "//mediapipe/tasks/c/vision/hand_landmarker:hand_landmarker_c_lib",
+    ],
+)

@@ -1,28 +1,9 @@
 {
   "sdk": {
-    "repository": "https://github.com/tqphan/libmediapipe",
-    "release": "mediapipe-v1.0.0-f9e8d75",
-    "build_recipe_sha": "f9e8d750429322f5e65a22e0d0becb0d3be6e4e6",
+    "kind": "static-source-build",
     "source_sha": "6d31f1ebc3284db74d211d62bdc4f0a0c29ea120",
-    "url": "https://github.com/tqphan/libmediapipe/releases/download/mediapipe-v1.0.0-f9e8d75/libmediapipe-v1.0.0-linux-x86_64.zip",
-    "archive_sha256": "729c4a75758529544c407ce2e156ebaefc96161eee5a9c043a53ac8b0aaf4779",
-    "platforms": {
-      "linux-x86_64": {
-        "archive": "libmediapipe-v1.0.0-linux-x86_64.zip",
-        "sha256": "729c4a75758529544c407ce2e156ebaefc96161eee5a9c043a53ac8b0aaf4779",
-        "library": "libmediapipe.so"
-      },
-      "windows-x86_64": {
-        "archive": "libmediapipe-v1.0.0-windows-x86_64.zip",
-        "sha256": "c6bfff7a51be9596ae80db6c996625f7459fe658cbed2e1c2e9390ac3dacad9b",
-        "library": "libmediapipe.dll"
-      },
-      "macos-arm64": {
-        "archive": "libmediapipe-v1.0.0-macos-arm64.zip",
-        "sha256": "eb18f295bfe601ea053e61766b80d1e5e8bff7ebcc00b9570091b1b9ae24220a",
-        "library": "libmediapipe.dylib"
-      }
-    }
+    "configuration": "face/hand, Halide AOT, OpenCV disabled, upstream GPU platform defaults, Windows static CRT",
+    "lock": "toolchain.lock.json"
   },
   "downloads": {},
   "files": {
@@ -35,16 +16,9 @@
     "vendor/include/mediapipe/tasks/c/vision/core/image.h": "ee9740678186c949e940a2e35332e64856fdc6e23078dbc807e848cc85ca3285",
     "vendor/include/mediapipe/tasks/c/vision/face_landmarker/face_landmarker.h": "42cbb330e9d51066476a30e6a00bb078f69d9989cc46d89424e0e9f738c8c90b",
     "vendor/include/mediapipe/tasks/c/vision/face_landmarker/face_landmarker_result.h": "7479dcdf871bbf35741dbe846ae4862df90d8b7f8715b1053cc45c151885798f",
-    "vendor/keyboard/LICENSE.libXtst": "304f78731e1e0e78132fbba4e1909c8642878a3b8c4837b36cb2d38891bf2204",
-    "vendor/keyboard/SOURCE.txt": "4c8c8ee682d030d0da70c4e4a6cebcff530bb3a9fd25afd1be344b8f9cd5e228",
-    "vendor/face_mesh_connections.py": "cc7171e44d0612db38720cb2fd2516c395992cdd7457efe341543be6f3c22d87"
-  },
-  "opencv": {
-    "version": "4.14.0",
-    "source_commit": "0654a42e19215ef25b1d367d822f3c630447e7c7",
-    "windows": {
-      "url": "https://github.com/opencv/opencv/releases/download/4.14.0/opencv-4.14.0-windows.exe",
-      "sha256": "5f266a8b73bed535962d7e861a6457e32a0dd5f463ad0a7cf8707a135469be63"
-    }
+    "vendor/face_mesh_connections.py": "cc7171e44d0612db38720cb2fd2516c395992cdd7457efe341543be6f3c22d87",
+    "vendor/include/mediapipe/tasks/c/vision/hand_landmarker/hand_landmarker_result_converter.h": "d9875c7d2945db1aa0ee162893f065dee2542e988a15b82ec9f501892502d297",
+    "vendor/include/mediapipe/tasks/c/vision/hand_landmarker/hand_landmarker_result.h": "7cb55d9cce4a24e872d61375bf12fc835f9a2b96a41f7c4f781bcefaed60ea15",
+    "vendor/include/mediapipe/tasks/c/vision/hand_landmarker/hand_landmarker.h": "621c1c72e1aa2d227b0929a65a99c788f6dada3b9d271eb992ceb9d0de8762b2"
   }
 }

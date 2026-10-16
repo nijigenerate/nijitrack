@@ -1,0 +1,24 @@
+diff --git a/mediapipe/calculators/tensor/BUILD b/mediapipe/calculators/tensor/BUILD
+index 284a9fb..ee513d7 100644
+--- a/mediapipe/calculators/tensor/BUILD
++++ b/mediapipe/calculators/tensor/BUILD
+@@ -1764,16 +1764,14 @@ cc_library(
+     deps = [
+         ":image_to_tensor_converter",
+         ":image_to_tensor_utils",
++        "//mediapipe/calculators/tensor/nijitrack_halide:warp",
+         "//mediapipe/framework:calculator_context",
+-        "//mediapipe/framework/formats:frame_buffer",
+         "//mediapipe/framework/formats:image",
++        "//mediapipe/framework/formats:image_frame",
+         "//mediapipe/framework/formats:tensor",
++        "//mediapipe/framework/port:ret_check",
+         "//mediapipe/framework/port:status",
+-        "//mediapipe/gpu:frame_buffer_view",
+-        "//mediapipe/util/frame_buffer:frame_buffer_util",
+         "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings:str_format",
+     ],
+ )
+ 

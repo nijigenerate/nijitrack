@@ -6,9 +6,12 @@
 /vendor/ffmpeg/
 /vendor/vc-runtime/
 /vendor/opencv/
+/vendor/toolchain/
+/vendor/sources/
 /vendor/sdk/*.so*
 /vendor/sdk/*.dll
 /vendor/sdk/*.dylib
+/vendor/sdk-halide/
 /vendor/keyboard/*.so*
 /fixtures/
 __pycache__/

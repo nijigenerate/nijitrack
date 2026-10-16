@@ -1,0 +1,48 @@
+{
+  "platform": "windows-x86_64",
+  "assets": [
+    {
+      "name": "bazel",
+      "version": "7.4.1",
+      "url": "https://github.com/bazelbuild/bazel/releases/download/7.4.1/bazel-7.4.1-windows-x86_64.exe",
+      "sha256": "4a76eddf6c5115e1d93355fd11db5ac2fc20e58f197f5d65d3f21da92aa0925b",
+      "file": "vendor/toolchain/bazel.exe"
+    },
+    {
+      "name": "halide",
+      "version": "15.0.1",
+      "url": "https://github.com/halide/Halide/releases/download/v15.0.1/Halide-15.0.1-x86-64-windows-4c63f1befa1063184c5982b11b6a2cc17d4e5815.zip",
+      "sha256": "61fd049bd75ee918ac6c30d0693aac6048f63f8d1fc4db31001573e58eae8dae",
+      "file": "vendor/downloads/halide-15.0.1-windows.zip",
+      "destination": "vendor/toolchain",
+      "directory": "vendor/toolchain/Halide-15.0.1-x86-64-windows"
+    },
+    {
+      "name": "sdl3",
+      "version": "3.4.18",
+      "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-devel-3.4.18-VC.zip",
+      "sha256": "78d84602ae616cfe26b33a73b7d3b9b6b56e8a6650e53d92c9c6ca938f747acd",
+      "file": "vendor/downloads/sdl3-3.4.18-windows.zip",
+      "destination": "vendor/toolchain",
+      "directory": "vendor/toolchain/SDL3-3.4.18"
+    },
+    {
+      "name": "llvm",
+      "version": "19.1.7",
+      "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/clang%2Bllvm-19.1.7-x86_64-pc-windows-msvc.tar.xz",
+      "sha256": "b4557b4f012161f56a2f5d9e877ab9635cafd7a08f7affe14829bd60c9d357f0",
+      "file": "vendor/downloads/llvm-19.1.7-windows.tar.xz",
+      "destination": "vendor/toolchain",
+      "directory": "vendor/toolchain/clang+llvm-19.1.7-x86_64-pc-windows-msvc"
+    },
+    {
+      "name": "mediapipe-source",
+      "version": "6d31f1ebc3284db74d211d62bdc4f0a0c29ea120",
+      "url": "https://codeload.github.com/google-ai-edge/mediapipe/tar.gz/6d31f1ebc3284db74d211d62bdc4f0a0c29ea120",
+      "sha256": "326494c9b2346a9138362b6c03de9df0d4ea146986e3320614725ceaf30d7378",
+      "file": "vendor/downloads/mediapipe-6d31f1e.tar.gz",
+      "destination": "vendor/sources",
+      "directory": "vendor/sources/mediapipe-6d31f1ebc3284db74d211d62bdc4f0a0c29ea120"
+    }
+  ]
+}

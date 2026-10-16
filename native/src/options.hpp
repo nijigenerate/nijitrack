@@ -1,6 +1,6 @@
 #pragma once
 #include "cli_defaults.hpp"
-#include "preview.hpp"
+#include "sdl_preview.hpp"
 #include <filesystem>
 #include <iostream>
 #include <cmath>
@@ -14,7 +14,7 @@ static int integer(const std::string &s) {
   return v;
 }
 struct Options {
-  std::string model = "../face_landmarker_v2_with_blendshapes.task", image, video, device, osc_host,
+  std::string model = "../face_landmarker_v2_with_blendshapes.task", image, device, osc_host,
               output_path, overlay_path;
   int width = 640, height = 480, frames = 0, repeat = 1, port = 39540;
   double fps = 30;
@@ -36,7 +36,7 @@ static Options parse(int argc, char **argv) {
     if (a == "--" && i == argc - 1) break;
     if (a.starts_with("--")) {
       const std::vector<std::string> names{
-        "--help", "--image", "--video", "--device", "--model", "--output", "--overlay",
+        "--help", "--image", "--device", "--model", "--output", "--overlay",
         "--osc-host", "--osc-port", "--width", "--height", "--frames", "--repeat", "--fps",
         "--flip", "--list-devices", "--show", "--show-video", "--show-wire", "--show-text",
         "--show-blend", "--json", "--keyboard", "--no-keyboard", "--no-osc"};
@@ -60,7 +60,7 @@ static Options parse(int argc, char **argv) {
     if (a == "--help" || a == "-h") {
       if (equals != std::string::npos) throw std::runtime_error("Help does not take a value");
       std::cout << "nijitrack --device N [--osc-host HOST] [--osc-port PORT] [--flip] [--show]\n"
-                   "nijitrack-cpp --image FILE | --video FILE | --device N_OR_PATH\n"
+                   "nijitrack-cpp --image FILE | --device N_OR_NAME\n"
                    "  --model FILE       default: executable/project directory\n  "
                    "--output FILE     "
                    " JSONL (default stdout)\n"
@@ -69,7 +69,7 @@ static Options parse(int argc, char **argv) {
                    "  --show             open preview; v/w/t/b toggle display layers\n"
                    "  --show-video --show-wire --show-text --show-blend   initial layers\n"
                    "  --repeat N         repeat still image in VIDEO mode\n  --frames N         "
-                   "stop after N video/camera frames\n"
+                   "stop after N camera frames\n"
                    "  --width N --height N --fps N    capture/frame settings (640x480, 30fps)\n"
                    "  --osc-host HOST --osc-port N    camera default: 127.0.0.1:39540\n  "
                    "--list-devices     JSON camera list\n"
@@ -79,8 +79,6 @@ static Options parse(int argc, char **argv) {
       std::exit(0);
     } else if (a == "--image")
       o.image = value();
-    else if (a == "--video")
-      o.video = value();
     else if (a == "--device")
       o.device = value();
     else if (a == "--model")
@@ -148,18 +146,18 @@ static Options parse(int argc, char **argv) {
   }
   if (o.keyboard && o.osc_host.empty())
     throw std::runtime_error("--keyboard requires an explicit --osc-host destination");
-  if ((!o.image.empty()) + (!o.video.empty()) + (!o.device.empty()) != 1)
-    throw std::runtime_error("Select exactly one of --image, --video, --device");
+  if ((!o.image.empty()) + (!o.device.empty()) != 1)
+    throw std::runtime_error("Select exactly one of --image, --device");
   if (o.width < 1 || o.width > 8192 || o.height < 1 || o.height > 8192 || !std::isfinite(o.fps) ||
       o.fps <= 0 || o.fps > 240 || o.frames < 0 || o.repeat < 1 || o.port < 1 || o.port > 65535)
     throw std::runtime_error("Invalid numeric option");
-  for (auto &input : {o.model, o.image, o.video})
+  for (auto &input : {o.model, o.image})
     if (!input.empty() && !fs::is_regular_file(input))
       throw std::runtime_error("Input file does not exist: " + input);
   for (const auto &destination : {o.output_path, o.overlay_path}) {
     if (destination.empty())
       continue;
-    for (const auto &input : {o.model, o.image, o.video}) {
+    for (const auto &input : {o.model, o.image}) {
       if (!input.empty() && fs::weakly_canonical(destination) == fs::weakly_canonical(input))
         throw std::runtime_error("Output must not overwrite input: " + destination);
     }
