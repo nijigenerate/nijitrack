@@ -215,11 +215,13 @@ jobs:
           key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
       - name: Stage legacy filename to verify install cleanup
         run: |
-          mkdir -p native/install/bin
+          mkdir -p native/install/bin native/build-sdl-static
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             cmake -E touch native/install/bin/nijitrack-cpp.exe
+            cmake -E touch native/build-sdl-static/nijitrack-cpp.exe
           else
             cmake -E touch native/install/bin/nijitrack-cpp
+            cmake -E touch native/build-sdl-static/nijitrack-cpp
           fi
       - name: Build, test and audit Linux and macOS tracker
         if: runner.os != 'Windows'
@@ -240,10 +242,12 @@ jobs:
             native/install/bin/nijitrack.exe -h
             native/install/bin/nijitrack.exe --help
             test ! -e native/install/bin/nijitrack-cpp.exe
+            test ! -e native/build-sdl-static/nijitrack-cpp.exe
           else
             native/install/bin/nijitrack -h
             native/install/bin/nijitrack --help
             test ! -e native/install/bin/nijitrack-cpp
+            test ! -e native/build-sdl-static/nijitrack-cpp
           fi
       - name: Export existing caches for main migration
         id: cache-export

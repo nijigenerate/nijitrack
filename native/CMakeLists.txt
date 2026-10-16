@@ -86,6 +86,14 @@ else()
 endif()
 target_link_libraries(nijitrack-cpp PRIVATE MediaPipeC nijitrack-keyboard nijitrack-desktop nijitrack-media)
 set_target_properties(nijitrack-cpp PROPERTIES OUTPUT_NAME nijitrack)
+# Run even when the tracker is already up to date. POST_BUILD alone would
+# leave a stale alias behind when reusing an existing build directory.
+add_custom_target(remove-legacy-tracker ALL
+  COMMAND ${CMAKE_COMMAND} -E rm -f
+    "${CMAKE_CURRENT_BINARY_DIR}/nijitrack-cpp${CMAKE_EXECUTABLE_SUFFIX}"
+    "$<TARGET_FILE_DIR:nijitrack-cpp>/nijitrack-cpp${CMAKE_EXECUTABLE_SUFFIX}"
+  VERBATIM)
+add_dependencies(nijitrack-cpp remove-legacy-tracker)
 add_custom_command(TARGET nijitrack-cpp POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_CURRENT_SOURCE_DIR}/vendor/models" "$<TARGET_FILE_DIR:nijitrack-cpp>/models")
