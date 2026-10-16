@@ -75,7 +75,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang ninja-build binutils jq curl pkg-config libegl-dev libgles-dev libx11-dev libxtst-dev libasound2-dev libpulse-dev libudev-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y --no-install-recommends clang ninja-build binutils jq curl pkg-config libegl-dev libgles-dev libx11-dev libxtst-dev libasound2-dev libpulse-dev libudev-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libxss-dev libwayland-dev libxkbcommon-dev
       - name: Install macOS media dependencies
         if: runner.os == 'macOS'
         run: brew install ninja pkg-config jq
@@ -85,17 +85,36 @@ jobs:
         run: |
           bash -n native/build.sh
           for script in native/scripts/*.sh native/tests/*.sh; do bash -n "$script"; done
-      - name: Build Linux and macOS with shell scripts
+      - name: Prepare Linux and macOS build tools
         if: runner.os != 'Windows'
-        run: bash native/build.sh all
-      - name: Build Windows with PowerShell
+        run: bash native/build.sh setup
+      - name: Prepare Windows build tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& native/scripts/setup_native_toolchain.ps1'
+      - name: Prepare Linux and macOS patched sources
+        if: runner.os != 'Windows'
+        run: bash native/build.sh prepare
+      - name: Prepare Windows patched sources
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& native/scripts/prepare_mediapipe_halide.ps1'
+      - name: Build Linux and macOS static SDK
+        if: runner.os != 'Windows'
+        run: bash native/build.sh sdk
+      - name: Build Windows static SDK
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & native/scripts/setup_native_toolchain.ps1
-          & native/scripts/prepare_mediapipe_halide.ps1
           & native/scripts/build_mediapipe_halide.ps1
           & native/tests/patch_management.ps1 -Dependencies
+      - name: Build, test and audit Linux and macOS tracker
+        if: runner.os != 'Windows'
+        run: bash native/build.sh install
+      - name: Build, test and audit Windows tracker
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
           & native/scripts/build_native.ps1 -Install
           ctest --test-dir native/build-mediapipe/halide --output-on-failure
       - name: Test face and hand inference with verified official fixtures
