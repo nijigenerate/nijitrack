@@ -67,6 +67,10 @@ if(WIN32)
   target_link_libraries(nijitrack-desktop INTERFACE ws2_32)
 endif()
 add_executable(nijitrack-cpp src/main.cpp)
+if(WIN32)
+  # Use UTF-8 argv and narrow file APIs, including MediaPipe's C API paths.
+  target_sources(nijitrack-cpp PRIVATE cmake/nijitrack.manifest)
+endif()
 if(APPLE)
   target_link_options(nijitrack-cpp PRIVATE
     "LINKER:-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist")

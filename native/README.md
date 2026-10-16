@@ -27,6 +27,9 @@ Camera indices are zero-based in SDL3 enumeration order; check `--list-devices`
 when using several cameras. Reuse `face_landmarker_v2_with_blendshapes.task` or
 specify `--model FILE`. The default search checks the executable and working
 directories and their parents. Normal setup does not download models.
+Paths use UTF-8 on every OS. The Windows executable embeds a UTF-8 process
+manifest so command-line arguments and MediaPipe file access support Unicode
+paths without changing the system locale (Windows 10 version 1903 or later).
 
 ## Building
 

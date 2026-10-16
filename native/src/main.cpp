@@ -153,7 +153,7 @@ static void overlay(const std::string &path, MpImagePtr image, const MpFaceLandm
         }
     }
   }
-  std::ofstream f(path, std::ios::binary);
+  std::ofstream f(niji::path_from_utf8(path), std::ios::binary);
   f << "P6\n" << w << ' ' << h << "\n255\n";
   f.write(reinterpret_cast<const char *>(out.data()), static_cast<std::streamsize>(out.size()));
   if (!f)
@@ -249,7 +249,7 @@ int main(int argc, char **argv) {
       // The landmarker, pose tracker, JSON stream and frame OSC sender have one owner.
       std::ofstream file;
       if (!o.output_path.empty()) {
-        file.open(o.output_path);
+        file.open(niji::path_from_utf8(o.output_path));
         if (!file) throw std::runtime_error("Cannot open JSON output");
       }
       std::ostream &out = o.output_path.empty() ? std::cout : file;

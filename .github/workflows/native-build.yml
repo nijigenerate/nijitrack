@@ -7,14 +7,14 @@ on:
       - 'native/**'
       - '.github/workflows/native-build.yml'
       - '.github/workflows/native-nightly.yml'
-      - '.github/scripts/native-cache-transfer.cmake'
+      - '.github/scripts/*.cmake'
   pull_request:
     branches: [main]
     paths:
       - 'native/**'
       - '.github/workflows/native-build.yml'
       - '.github/workflows/native-nightly.yml'
-      - '.github/scripts/native-cache-transfer.cmake'
+      - '.github/scripts/*.cmake'
   workflow_dispatch:
     inputs:
       publish:
@@ -232,6 +232,8 @@ jobs:
           ctest --test-dir native/build-mediapipe/halide --output-on-failure
       - name: Test face and hand inference with verified official fixtures
         run: bash native/tests/run_tracking_smoke.sh
+      - name: Test Unicode executable, model and output paths
+        run: cmake -P .github/scripts/test-native-unicode-paths.cmake
       - name: Test packaged executable startup
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
