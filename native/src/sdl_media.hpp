@@ -44,6 +44,20 @@ inline void copy_rgb(SDL_Surface *source, int max_width, int max_height,
                 static_cast<const uint8_t *>(rgb->pixels)+static_cast<size_t>(y)*rgb->pitch,
                 static_cast<size_t>(width)*3);
 }
+inline std::vector<uint8_t> rgb_pixels(const uint8_t *data, int width, int height,
+                                     int channels, bool flip = false) {
+  if (!data || width < 1 || height < 1 || width > 8192 || height > 8192 ||
+      (channels != 3 && channels != 4))
+    throw std::runtime_error("Expected an RGB or RGBA image");
+  std::vector<uint8_t> result(static_cast<size_t>(width) * height * 3);
+  for (int y = 0; y < height; ++y)
+    for (int x = 0; x < width; ++x) {
+      const auto source = (static_cast<size_t>(y) * width + (flip ? width - 1 - x : x)) * channels;
+      const auto destination = (static_cast<size_t>(y) * width + x) * 3;
+      std::copy_n(data + source, 3, result.data() + destination);
+    }
+  return result;
+}
 struct Camera {
   int id = 0;
   std::string name, path, uuid;

@@ -41,9 +41,14 @@ int main() {
       require(rejected, "Invalid options accepted");
     }
     const std::vector<uint8_t> rgb{255,0,0, 0,255,0, 0,0,255, 255,255,255};
+    const std::vector<uint8_t> rgba{255,0,0,0, 0,255,0,64, 0,0,255,128, 255,255,255,255};
+    require(niji::rgb_pixels(rgba.data(), 2, 2, 4) == rgb,
+            "RGBA conversion changed RGB bytes or retained alpha");
     auto mirrored = niji::mirror_rgb(rgb.data(), 2, 2, 3);
     require(mirrored == std::vector<uint8_t>({0,255,0, 255,0,0, 255,255,255, 0,0,255}),
             "Flip must mirror each row before inference");
+    require(niji::rgb_pixels(rgba.data(), 2, 2, 4, true) == mirrored,
+            "RGBA conversion mirrored incorrectly");
     niji::platform::Network network;
     auto receiver = socket(AF_INET, SOCK_DGRAM, 0);
     require(receiver != niji::platform::invalid_socket, "Cannot create OSC receiver");

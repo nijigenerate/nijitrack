@@ -122,18 +122,11 @@ public:
 static void overlay(const std::string &path, MpImagePtr image, const MpFaceLandmarkerResult &r,
                     bool flip) {
   int w = MpImageGetWidth(image), h = MpImageGetHeight(image);
-  if (MpImageGetChannels(image) != 3)
-    throw std::runtime_error("Overlay requires RGB input");
   const uint8_t *data = nullptr;
   char *error = nullptr;
   auto status = MpImageDataUint8(image, &data, &error);
   check(status, error, "read image pixels");
-  std::vector<uint8_t> out(static_cast<size_t>(w) * static_cast<size_t>(h) * 3);
-  for (int y = 0; y < h; y++)
-    for (int x = 0; x < w; x++)
-      for (int c = 0; c < 3; c++)
-        out[(static_cast<size_t>(y) * w + x) * 3 + c] =
-            data[(static_cast<size_t>(y) * w + (flip ? w - 1 - x : x)) * 3 + c];
+  auto out = niji::rgb_pixels(data, w, h, MpImageGetChannels(image), flip);
   if (r.face_landmarks_count) {
     const auto &l = r.face_landmarks[0];
     for (uint32_t i = 0; i < l.landmarks_count; i++) {
@@ -310,7 +303,12 @@ int main(int argc, char **argv) {
           char *error = nullptr;
           auto status = MpImageDataUint8(image, &pixels, &error);
           check(status, error, "read preview pixels");
-          if (MpImageGetChannels(image) != 3) throw std::runtime_error("Preview requires RGB input");
+          std::vector<uint8_t> rgb;
+          if (MpImageGetChannels(image) != 3) {
+            rgb = niji::rgb_pixels(pixels, MpImageGetWidth(image), MpImageGetHeight(image),
+                                   MpImageGetChannels(image));
+            pixels = rgb.data();
+          }
           // Copy all pixels/geometry before releasing the inference result.
           auto rendered = niji::render_preview(pixels, MpImageGetWidth(image), MpImageGetHeight(image),
                                                result.value, pp, display_settings.get());
