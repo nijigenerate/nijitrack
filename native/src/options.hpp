@@ -60,7 +60,7 @@ static Options parse(int argc, char **argv) {
     if (a == "--help" || a == "-h") {
       if (equals != std::string::npos) throw std::runtime_error("Help does not take a value");
       std::cout << "nijitrack --device N [--osc-host HOST] [--osc-port PORT] [--flip] [--show]\n"
-                   "nijitrack-cpp --image FILE | --device N_OR_NAME\n"
+                   "nijitrack --image FILE | --device N_OR_NAME\n"
                    "  --model FILE       default: executable/project directory\n  "
                    "--output FILE     "
                    " JSONL (default stdout)\n"

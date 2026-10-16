@@ -213,6 +213,14 @@ jobs:
         with:
           path: native/vendor/sdk-halide
           key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
+      - name: Stage legacy filename to verify install cleanup
+        run: |
+          mkdir -p native/install/bin
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cmake -E touch native/install/bin/nijitrack-cpp.exe
+          else
+            cmake -E touch native/install/bin/nijitrack-cpp
+          fi
       - name: Build, test and audit Linux and macOS tracker
         if: runner.os != 'Windows'
         run: bash native/build.sh install
@@ -228,10 +236,12 @@ jobs:
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             native/install/bin/nijitrack.exe -h
-            native/install/bin/nijitrack-cpp.exe --help
+            native/install/bin/nijitrack.exe --help
+            test ! -e native/install/bin/nijitrack-cpp.exe
           else
             native/install/bin/nijitrack -h
-            native/install/bin/nijitrack-cpp --help
+            native/install/bin/nijitrack --help
+            test ! -e native/install/bin/nijitrack-cpp
           fi
       - name: Export existing caches for main migration
         id: cache-export
@@ -257,10 +267,26 @@ jobs:
           mkdir -p native/dist
           cd native/install
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cmake -E tar cf "../dist/nijitrack-native-${NATIVE_PLATFORM}.zip" --format=zip .
+            archive="../dist/nijitrack-native-${NATIVE_PLATFORM}.zip"
+            cmake -E tar cf "$archive" --format=zip .
+            expected=bin/nijitrack.exe
           else
-            cmake -E tar czf "../dist/nijitrack-native-${NATIVE_PLATFORM}.tar.gz" --format=gnutar .
+            archive="../dist/nijitrack-native-${NATIVE_PLATFORM}.tar.gz"
+            cmake -E tar czf "$archive" --format=gnutar .
+            expected=bin/nijitrack
           fi
+          cmake -E tar tf "$archive" > ../results/build-environment/package-contents.txt
+          count=0
+          while IFS= read -r entry; do
+            entry=${entry%$'\r'}
+            entry=${entry#./}
+            if [[ "$entry" == "$expected" ]]; then count=$((count+1)); fi
+            if [[ "$entry" == bin/nijitrack-cpp || "$entry" == bin/nijitrack-cpp.exe ]]; then
+              echo "Duplicate tracker in package: $entry" >&2
+              exit 1
+            fi
+          done < ../results/build-environment/package-contents.txt
+          test "$count" -eq 1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nijitrack-native-${{ matrix.platform }}

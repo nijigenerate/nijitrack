@@ -80,9 +80,7 @@ else()
   target_compile_options(nijitrack-cpp PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
 endif()
 target_link_libraries(nijitrack-cpp PRIVATE MediaPipeC nijitrack-keyboard nijitrack-desktop nijitrack-media)
-add_custom_command(TARGET nijitrack-cpp POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:nijitrack-cpp>"
-    "$<TARGET_FILE_DIR:nijitrack-cpp>/nijitrack${CMAKE_EXECUTABLE_SUFFIX}")
+set_target_properties(nijitrack-cpp PROPERTIES OUTPUT_NAME nijitrack)
 if(APPLE)
   set(install_rpath "@loader_path/../lib")
 else()
@@ -90,11 +88,9 @@ else()
 endif()
 set_target_properties(nijitrack-cpp PROPERTIES BUILD_RPATH "${MEDIAPIPE_SDK_DIR}" INSTALL_RPATH "${install_rpath}")
 install(TARGETS nijitrack-cpp keyboard-probe RUNTIME DESTINATION bin)
-# Copy the installed executable after CMake rewrites its RPATH.
-install(CODE "execute_process(COMMAND \"${CMAKE_COMMAND}\" -E copy_if_different
-  \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/nijitrack-cpp${CMAKE_EXECUTABLE_SUFFIX}\"
-  \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/nijitrack${CMAKE_EXECUTABLE_SUFFIX}\"
-  COMMAND_ERROR_IS_FATAL ANY)")
+# Remove the historical duplicate when installing into an existing prefix.
+install(CODE "file(REMOVE
+  \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/nijitrack-cpp${CMAKE_EXECUTABLE_SUFFIX}\")")
 if(WIN32)
   add_custom_command(TARGET nijitrack-cpp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:SDL3::SDL3>" "$<TARGET_FILE_DIR:nijitrack-cpp>")
@@ -152,7 +148,7 @@ if(BUILD_TESTING)
   add_test(NAME cli-help COMMAND nijitrack-cpp --help)
   add_test(NAME python-command-help
     COMMAND "$<TARGET_FILE_DIR:nijitrack-cpp>/nijitrack${CMAKE_EXECUTABLE_SUFFIX}" -h)
-  set_tests_properties(cli-help PROPERTIES PASS_REGULAR_EXPRESSION "nijitrack-cpp --image")
+  set_tests_properties(cli-help PROPERTIES PASS_REGULAR_EXPRESSION "nijitrack --image")
   add_test(NAME cli-missing-value COMMAND nijitrack-cpp --image)
   set_tests_properties(cli-missing-value PROPERTIES WILL_FAIL TRUE)
 endif()

@@ -417,7 +417,7 @@ int main(int argc, char **argv) {
     inference.join();
     return 0;
   } catch (const std::exception &error) {
-    std::cerr << "nijitrack-cpp: " << error.what() << '\n';
+    std::cerr << "nijitrack: " << error.what() << '\n';
     return 1;
   }
 }

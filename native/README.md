@@ -11,8 +11,8 @@ and the Halide compiler are build tools, not application runtime dependencies.
 
 ## Replacing the Python command
 
-The build produces `nijitrack` (`nijitrack.exe` on Windows) and an identical
-`nijitrack-cpp` executable.
+The build and package contain one tracker executable: `nijitrack`
+(`nijitrack.exe` on Windows). The CMake target is named `nijitrack-cpp`.
 
 ```text
 nijitrack --list-devices
